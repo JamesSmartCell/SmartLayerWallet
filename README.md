@@ -6,7 +6,7 @@ Unified passkey-based smart wallet based on the OpenPasskey ecosystem.
 
 A cross-app asset management wallet built on ERC-4337 Account Abstraction using Coinbase Smart Wallet contracts. Users authenticate with passkeys (WebAuthn) instead of seed phrases.
 
-**Live URL:** `https://wallet.openpasskey.com`
+**Live URL:** `https://wallet.percolate.one`
 
 ## Features
 
