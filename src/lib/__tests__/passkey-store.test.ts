@@ -56,7 +56,7 @@ describe('PasskeyStore', () => {
       expect(retrieved?.signCount).toBe(0)
     })
 
-    it('should update existing passkey on conflict', () => {
+    it('should NOT overwrite existing passkey (insert-only)', () => {
       const passkey = {
         id: 'test-credential-id',
         publicKey: '0x04' + 'a'.repeat(128) as Hex,
@@ -65,17 +65,20 @@ describe('PasskeyStore', () => {
         smartAccountAddress: '0x' + '1'.repeat(40) as Hex,
       }
 
-      store.storePasskey(passkey)
+      const result1 = store.storePasskey(passkey)
+      expect(result1).toBe(true)
 
-      // Update with new public key
+      // Attempt to overwrite with new public key
       const updatedPasskey = {
         ...passkey,
         publicKey: '0x04' + 'b'.repeat(128) as Hex,
       }
-      store.storePasskey(updatedPasskey)
+      const result2 = store.storePasskey(updatedPasskey)
+      expect(result2).toBe(false) // Should fail
 
+      // Original key should be preserved
       const retrieved = store.getPasskey(passkey.id)
-      expect(retrieved?.publicKey).toBe(updatedPasskey.publicKey)
+      expect(retrieved?.publicKey).toBe(passkey.publicKey)
     })
   })
 
@@ -135,7 +138,7 @@ describe('PasskeyStore', () => {
   })
 
   describe('updatePasskeyUsage', () => {
-    it('should update last used time and sign count', () => {
+    it('should update last used time and sign count', async () => {
       const passkey = {
         id: 'test-credential-id',
         publicKey: '0x04' + 'a'.repeat(128) as Hex,
@@ -148,13 +151,13 @@ describe('PasskeyStore', () => {
       const initial = store.getPasskey(passkey.id)
 
       // Wait a bit to ensure timestamp changes
-      setTimeout(() => {
-        store.updatePasskeyUsage(passkey.id, 5)
-        const updated = store.getPasskey(passkey.id)
+      await new Promise(resolve => setTimeout(resolve, 10))
+      
+      store.updatePasskeyUsage(passkey.id, 5)
+      const updated = store.getPasskey(passkey.id)
 
-        expect(updated?.signCount).toBe(5)
-        expect(updated?.lastUsed.getTime()).toBeGreaterThan(initial!.lastUsed.getTime())
-      }, 10)
+      expect(updated?.signCount).toBe(5)
+      expect(updated?.lastUsed.getTime()).toBeGreaterThan(initial!.lastUsed.getTime())
     })
   })
 
@@ -246,7 +249,7 @@ describe('PasskeyStore', () => {
       expect(exceeded).toBe(true)
     })
 
-    it('should reset after window expires', () => {
+    it('should reset after window expires', async () => {
       const ip = '127.0.0.1'
       const endpoint = '/test'
       const maxRequests = 2
@@ -261,10 +264,10 @@ describe('PasskeyStore', () => {
       expect(store.checkRateLimit(ip, endpoint, maxRequests, windowSeconds)).toBe(true)
 
       // Wait for window to expire
-      setTimeout(() => {
-        // Should be allowed again
-        expect(store.checkRateLimit(ip, endpoint, maxRequests, windowSeconds)).toBe(false)
-      }, 1100)
+      await new Promise(resolve => setTimeout(resolve, 1100))
+      
+      // Should be allowed again
+      expect(store.checkRateLimit(ip, endpoint, maxRequests, windowSeconds)).toBe(false)
     })
   })
 })

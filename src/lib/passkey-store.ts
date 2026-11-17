@@ -80,17 +80,22 @@ export class PasskeyStore {
   }
 
   /**
-   * Store a new passkey credential
+   * Store a new passkey credential (insert-only, does not overwrite existing)
+   * Returns true if inserted, false if already exists
    */
-  storePasskey(passkey: Omit<PasskeyRecord, 'createdAt' | 'lastUsed' | 'signCount'>): void {
+  storePasskey(passkey: Omit<PasskeyRecord, 'createdAt' | 'lastUsed' | 'signCount'>): boolean {
     const now = Date.now()
+    
+    // Check if already exists
+    const existing = this.getPasskey(passkey.id)
+    if (existing) {
+      // Do not overwrite - this is intentional security behavior
+      return false
+    }
+    
     const stmt = this.db.prepare(`
       INSERT INTO passkeys (id, public_key, rp_id, user_handle, smart_account_address, created_at, last_used, sign_count)
       VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-      ON CONFLICT(id) DO UPDATE SET
-        public_key = excluded.public_key,
-        last_used = excluded.last_used,
-        smart_account_address = excluded.smart_account_address
     `)
     stmt.run(
       passkey.id,
@@ -101,6 +106,7 @@ export class PasskeyStore {
       now,
       now
     )
+    return true
   }
 
   /**
