@@ -17,6 +17,9 @@
 .env*.local
 .env
 
+# Wallet data directory (SQLite database)
+data/
+
 # Vercel
 .vercel
 

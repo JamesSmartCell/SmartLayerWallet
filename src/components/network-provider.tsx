@@ -9,7 +9,7 @@ import {
   type NetworkKey 
 } from '@/lib/env'
 
-const STORAGE_KEY = 'openpasskey_selected_network'
+const STORAGE_KEY = 'smartlayer_wallet_selected_network'
 
 interface NetworkContextValue {
   /** Currently selected network key */

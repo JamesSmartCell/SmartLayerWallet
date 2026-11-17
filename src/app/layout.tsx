@@ -7,8 +7,8 @@ import { validateEnv } from '@/lib/env'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'GarageDoorKey',
-  description: 'Passkey-powered garage door access on Base Sepolia',
+  title: 'SmartLayerWallet',
+  description: 'Passkey-powered smart wallet on Base Sepolia',
   manifest: '/manifest.json',
 }
 

@@ -1,7 +1,7 @@
 {
-  "name": "GarageDoorKey",
-  "short_name": "GarageKey",
-  "description": "Passkey-powered garage door access on Base Sepolia",
+  "name": "SmartLayerWallet",
+  "short_name": "SmartLayer",
+  "description": "Passkey-powered smart wallet on Base Sepolia",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0f172a",

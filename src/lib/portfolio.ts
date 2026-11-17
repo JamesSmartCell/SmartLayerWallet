@@ -1,5 +1,6 @@
-import { createPublicClient, http, formatEther, formatUnits } from 'viem'
+import { formatEther, formatUnits } from 'viem'
 import { NETWORKS, NETWORK_KEYS, type NetworkKey } from './env'
+import { getWaterfallClient } from './rpc'
 
 export interface TokenBalance {
   symbol: string
@@ -61,11 +62,14 @@ export class PortfolioService {
   constructor(networkKey: NetworkKey = NETWORK_KEYS.BASE_SEPOLIA) {
     this.networkKey = networkKey
     this.chain = NETWORKS[networkKey].chain
+    this.publicClient = null // Lazy init
+  }
 
-    this.publicClient = createPublicClient({
-      chain: this.chain,
-      transport: http(NETWORKS[this.networkKey].publicRpc || NETWORKS[this.networkKey].chain.rpcUrls.default.http[0]),
-    })
+  private async getPublicClient() {
+    if (!this.publicClient) {
+      this.publicClient = await getWaterfallClient(this.networkKey)
+    }
+    return this.publicClient
   }
 
   getNetworkKey(): NetworkKey {
@@ -75,9 +79,10 @@ export class PortfolioService {
   async getPortfolio(address: string, prices: Record<string, number>): Promise<Portfolio> {
     try {
       const balances: TokenBalance[] = []
+      const publicClient = await this.getPublicClient()
 
       // Get ETH balance
-      const ethBalance = await this.publicClient.getBalance({ address })
+      const ethBalance = await publicClient.getBalance({ address })
       const ethFormatted = formatEther(ethBalance)
       const ethPrice = prices['ETH'] || 0
       const ethUsdValue = parseFloat(ethFormatted) * ethPrice
@@ -99,7 +104,7 @@ export class PortfolioService {
 
       if (usdcConfig) {
         try {
-          const usdcBalance = await this.publicClient.readContract({
+          const usdcBalance = await publicClient.readContract({
             address: usdcConfig.address,
             abi: ERC20_ABI,
             functionName: 'balanceOf',
@@ -157,26 +162,27 @@ export class PortfolioService {
 
   async getTokenBalance(address: string, tokenAddress: string): Promise<TokenBalance | null> {
     try {
+      const publicClient = await this.getPublicClient()
       const [balance, decimals, symbol, name] = await Promise.all([
-        this.publicClient.readContract({
+        publicClient.readContract({
           address: tokenAddress,
           abi: ERC20_ABI,
           functionName: 'balanceOf',
           args: [address],
         }),
-        this.publicClient.readContract({
+        publicClient.readContract({
           address: tokenAddress,
           abi: ERC20_ABI,
           functionName: 'decimals',
           args: [],
         }),
-        this.publicClient.readContract({
+        publicClient.readContract({
           address: tokenAddress,
           abi: ERC20_ABI,
           functionName: 'symbol',
           args: [],
         }),
-        this.publicClient.readContract({
+        publicClient.readContract({
           address: tokenAddress,
           abi: ERC20_ABI,
           functionName: 'name',

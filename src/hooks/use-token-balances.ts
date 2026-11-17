@@ -1,10 +1,11 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Address, createPublicClient, http } from 'viem'
+import { Address } from 'viem'
 import { useWallet } from '@/components/wallet-provider-real'
 import { NETWORKS, type NetworkKey } from '@/lib/env'
 import { useNetwork } from '@/components/network-provider'
+import { getWaterfallClient } from '@/lib/rpc'
 
 export type TokenOption = {
     key: string
@@ -74,7 +75,7 @@ export function useTokenBalances({ isOpen, includeEth = false }: UseTokenBalance
                             rawBalance: reg.balance,
                             networkKey: selectedNetwork,
                             networkName: network.name,
-                            tokenName: hardcodedToken ? hardcodedToken[1].name : 'OpenPassKey Token',
+                            tokenName: hardcodedToken ? hardcodedToken[1].name : 'Token',
                             decimals: hardcodedToken ? hardcodedToken[1].decimals : 18,
                         })
                     }
@@ -120,34 +121,29 @@ export function useTokenBalances({ isOpen, includeEth = false }: UseTokenBalance
             const target = prev.find(t => t.key === tokenKey)
             if (!target || target.type === 'ETH' || !target.address) return prev
 
-            const network = NETWORKS[target.networkKey]
-            const publicClient = createPublicClient({
-                chain: network.chain,
-                transport: http(network.publicRpc || network.chain.rpcUrls.default.http[0])
-            })
+            ; (async () => {
+                try {
+                    const publicClient = await getWaterfallClient(target.networkKey)
+                    const rawBalance = await publicClient.readContract({
+                        address: target.address!,
+                        abi: [{
+                            name: 'balanceOf',
+                            type: 'function',
+                            stateMutability: 'view',
+                            inputs: [{ name: 'account', type: 'address' }],
+                            outputs: [{ name: '', type: 'uint256' }],
+                        }],
+                        functionName: 'balanceOf',
+                        args: [userAddress],
+                    }) as bigint
 
-                ; (async () => {
-                    try {
-                        const rawBalance = await publicClient.readContract({
-                            address: target.address!,
-                            abi: [{
-                                name: 'balanceOf',
-                                type: 'function',
-                                stateMutability: 'view',
-                                inputs: [{ name: 'account', type: 'address' }],
-                                outputs: [{ name: '', type: 'uint256' }],
-                            }],
-                            functionName: 'balanceOf',
-                            args: [userAddress],
-                        }) as bigint
-
-                        setTokens(current => current.map(t =>
-                            t.key === tokenKey ? { ...t, rawBalance } : t
-                        ))
-                    } catch (err) {
-                        console.error('Failed to fetch balance for token:', tokenKey, err)
-                    }
-                })()
+                    setTokens(current => current.map(t =>
+                        t.key === tokenKey ? { ...t, rawBalance } : t
+                    ))
+                } catch (err) {
+                    console.error('Failed to fetch balance for token:', tokenKey, err)
+                }
+            })()
 
             return prev
         })

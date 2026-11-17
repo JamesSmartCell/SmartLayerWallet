@@ -6,7 +6,6 @@
  */
 
 import {
-  createPublicClient,
   http,
   Hex,
   Address,
@@ -20,6 +19,7 @@ import {
 } from 'viem/account-abstraction'
 import { verify } from 'webauthn-p256'
 import { ENV, getEndpointsForNetwork, getDefaultNetworkKey, type NetworkKey } from './env'
+import { getWaterfallClient } from './rpc'
 import type { PasskeyCredential } from './passkey-real'
 
 export interface UserOperationCall {
@@ -38,15 +38,24 @@ export class SmartAccountService {
     this.currentNetworkKey = networkKey || getDefaultNetworkKey()
     this.endpoints = getEndpointsForNetwork(this.currentNetworkKey)
     this.chain = this.endpoints.chain
-    this.publicClient = createPublicClient({
-      chain: this.chain,
-      transport: http(this.endpoints.publicRpc || this.endpoints.chain.rpcUrls.default.http[0]),
-    })
+    
+    // Initialize with waterfall RPC (async init deferred to first use)
+    this.publicClient = null
 
     console.log('🏦 SmartAccountService initialized:', {
       network: this.endpoints.chainName,
       chainId: this.endpoints.chainId,
     })
+  }
+
+  /**
+   * Get or create the waterfall public client
+   */
+  private async getPublicClient() {
+    if (!this.publicClient) {
+      this.publicClient = await getWaterfallClient(this.currentNetworkKey)
+    }
+    return this.publicClient
   }
 
   /**
@@ -60,10 +69,7 @@ export class SmartAccountService {
     this.currentNetworkKey = networkKey
     this.endpoints = getEndpointsForNetwork(networkKey)
     this.chain = this.endpoints.chain
-    this.publicClient = createPublicClient({
-      chain: this.chain,
-      transport: http(this.endpoints.publicRpc || this.endpoints.chain.rpcUrls.default.http[0]),
-    })
+    this.publicClient = null // Reset client, will be re-created on next use
 
     console.log('🌐 SmartAccountService network switched:', {
       network: this.endpoints.chainName,
@@ -95,7 +101,7 @@ export class SmartAccountService {
     })
 
     if (credential.publicKey === '0x') {
-      throw new Error('Credential missing public key - fetch from recovery API first')
+      throw new Error('Credential missing public key - fetch from server API first')
     }
 
     // Create WebAuthn account from passkey credential
@@ -109,9 +115,10 @@ export class SmartAccountService {
     })
 
     // Create Coinbase Smart Account with WebAuthn owner - EXACT pattern from real code
+    const publicClient = await this.getPublicClient()
     const account = await toCoinbaseSmartAccount({
       owners: [webAuthnAccount],
-      client: this.publicClient,
+      client: publicClient,
       version: '1.1', // Align with mini-app derivation
     })
 
@@ -136,7 +143,8 @@ export class SmartAccountService {
    */
   async isAccountDeployed(address: Address): Promise<boolean> {
     try {
-      const code = await this.publicClient.getBytecode({ address })
+      const publicClient = await this.getPublicClient()
+      const code = await publicClient.getBytecode({ address })
       return code !== undefined && code !== '0x'
     } catch (error) {
       console.error('Failed to check account deployment:', error)
@@ -147,9 +155,10 @@ export class SmartAccountService {
   /**
    * Create bundler client for UserOperation submission - EXACT pattern from real implementation
    */
-  private createBundlerClient(account: SmartAccount) {
+  private async createBundlerClient(account: SmartAccount) {
+    const publicClient = await this.getPublicClient()
     return createBundlerClient({
-      client: this.publicClient,
+      client: publicClient,
       chain: this.chain,
       account,
       transport: http(this.endpoints.bundlerUrl),
@@ -179,15 +188,15 @@ export class SmartAccountService {
     // Create smart account
     const account = await this.createSmartAccount(credential)
     console.log('Smart account created:', account)
-    const bundlerClient = this.createBundlerClient(account)
-    console.log('Bundler client created:', bundlerClient)
+    const bundlerClientInstance = await this.createBundlerClient(account)
+    console.log('Bundler client created:', bundlerClientInstance)
     const paymasterEnabled = this.endpoints.paymaster
 
     let userOpHash: Hex
     if (paymasterEnabled) {
       try {
         console.log(`🚀 Attempting sponsored transaction on ${this.currentNetworkKey}...`)
-        userOpHash = await bundlerClient.sendUserOperation({
+        userOpHash = await bundlerClientInstance.sendUserOperation({
           calls: calls.map(call => ({
             to: call.to,
             value: call.value,
@@ -197,7 +206,7 @@ export class SmartAccountService {
         })
       } catch (err) {
         console.warn(`⚠️ Sponsored transaction failed on ${this.currentNetworkKey}, falling back to user-pays:`, err)
-        userOpHash = await bundlerClient.sendUserOperation({
+        userOpHash = await bundlerClientInstance.sendUserOperation({
           calls: calls.map(call => ({
             to: call.to,
             value: call.value,
@@ -207,7 +216,7 @@ export class SmartAccountService {
       }
     } else {
       console.log(`🚀 Attempting user-pays transaction on ${this.currentNetworkKey}...`, calls)
-      userOpHash = await bundlerClient.sendUserOperation({
+      userOpHash = await bundlerClientInstance.sendUserOperation({
         calls: calls.map(call => ({
           to: call.to,
           value: call.value,
@@ -221,7 +230,7 @@ export class SmartAccountService {
       account: account.address,
     })
 
-    const receipt = await bundlerClient.waitForUserOperationReceipt({
+    const receipt = await bundlerClientInstance.waitForUserOperationReceipt({
       hash: userOpHash,
     })
 
@@ -278,7 +287,8 @@ export class SmartAccountService {
    */
   async getBalance(address: Address): Promise<bigint> {
     try {
-      return await this.publicClient.getBalance({ address })
+      const publicClient = await this.getPublicClient()
+      return await publicClient.getBalance({ address })
     } catch (error) {
       console.error('Failed to get balance:', error)
       return 0n
@@ -300,7 +310,8 @@ export class SmartAccountService {
   }> {
     try {
       // This would use bundler's estimation methods
-      const fees = await this.publicClient.estimateFeesPerGas()
+      const publicClient = await this.getPublicClient()
+      const fees = await publicClient.estimateFeesPerGas()
 
       // Rough estimates - real implementation would use bundler estimation
       return {
@@ -320,73 +331,8 @@ export class SmartAccountService {
    * Read ERC20 balances via registry paging
    */
   async getRegistryBalances(user: Address): Promise<{ tokens: Address[]; balances: bigint[] }> {
-    const registry = this.endpoints.tokenRegistry
-    if (!registry) return { tokens: [], balances: [] }
-
-    const abi = [
-      {
-        name: 'getAllBalances',
-        type: 'function',
-        stateMutability: 'view',
-        inputs: [
-          { name: 'user', type: 'address' },
-          { name: 'index', type: 'uint256' },
-        ],
-        outputs: [
-          { name: '', type: 'address[]' },
-          { name: '', type: 'uint256[]' },
-          { name: '', type: 'uint256' },
-        ],
-      },
-    ] as const
-
-    let index = 0n
-    const tokens: Address[] = []
-    const balances: bigint[] = []
-    // page until endIndex == 0
-    for (let i = 0; i < 20; i++) {
-      const result = await this.publicClient.readContract({
-        address: registry as Address,
-        abi,
-        functionName: 'getAllBalances',
-        args: [user, index],
-      }) as [Address[], bigint[], bigint]
-      const [pageTokens, pageBalances, endIndex] = result
-      tokens.push(...pageTokens)
-      balances.push(...pageBalances)
-      if (endIndex === 0n) break
-      index = endIndex
-    }
-
-    // Check for optional AUDM token from env
-    const audmToken = process.env.NEXT_PUBLIC_USE_AUDM_TOKEN as Address | undefined
-    if (audmToken && !tokens.some(t => t.toLowerCase() === audmToken.toLowerCase())) {
-      try {
-        const erc20BalanceOfAbi = [{
-          name: 'balanceOf',
-          type: 'function',
-          stateMutability: 'view',
-          inputs: [{ name: 'account', type: 'address' }],
-          outputs: [{ name: '', type: 'uint256' }],
-        }] as const
-
-        const audmBalance = await this.publicClient.readContract({
-          address: audmToken,
-          abi: erc20BalanceOfAbi,
-          functionName: 'balanceOf',
-          args: [user],
-        }) as bigint
-
-        if (audmBalance > 0n) {
-          tokens.push(audmToken)
-          balances.push(audmBalance)
-        }
-      } catch (error) {
-        console.warn('Failed to fetch AUDM token balance:', error)
-      }
-    }
-
-    return { tokens, balances }
+    // Token registry not available in this wallet
+    return { tokens: [], balances: [] }
   }
 
   /**
@@ -417,122 +363,6 @@ export class SmartAccountService {
     return this.sendTransaction(credential, [{ to: token, data }])
   }
 
-  /**
-   * Check if user can pay: sufficient balance and allowance.
-   * Returns { ok, error } - error is set when balance or allowance is insufficient.
-   */
-  async checkPaymentReadiness(
-    userAddress: Address,
-    tokenAddress: Address,
-    paymentAmount: bigint
-  ): Promise<{ ok: boolean; error?: string; balance?: bigint; allowance?: bigint }> {
-    const paymentHandler = this.endpoints.paymentContract
-    if (!paymentHandler) {
-      return { ok: false, error: 'Payment contract not configured' }
-    }
-
-    const erc20Abi = [
-      { name: 'balanceOf', type: 'function', inputs: [{ name: 'account', type: 'address' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
-      { name: 'allowance', type: 'function', inputs: [{ name: 'owner', type: 'address' }, { name: 'spender', type: 'address' }], outputs: [{ type: 'uint256' }], stateMutability: 'view' },
-    ] as const
-
-    const [balance, allowance] = await Promise.all([
-      this.publicClient.readContract({
-        address: tokenAddress,
-        abi: erc20Abi,
-        functionName: 'balanceOf',
-        args: [userAddress],
-      }),
-      this.publicClient.readContract({
-        address: tokenAddress,
-        abi: erc20Abi,
-        functionName: 'allowance',
-        args: [userAddress, paymentHandler],
-      }),
-    ])
-
-    if (balance < paymentAmount) {
-      return { ok: false, error: 'Insufficient token balance.', balance, allowance }
-    }
-    return { ok: true, balance, allowance }
-  }
-
-  /**
-   * Send payment via processPaymentDirect - user signs UserOp with passkey, contract uses msg.sender.
-   * Batches approve + processPaymentDirect in one UserOp.
-   */
-  async sendPaymentDirect(
-    credential: PasskeyCredential,
-    signedPaymentRequest: {
-      deviceSignature: Hex
-      timestamp: bigint
-      paymentRequest: { paymentAmount: bigint; tokenAddress: Address; salt: Hex }
-    }
-  ): Promise<Hex> {
-    const paymentHandler = this.endpoints.paymentContract
-    if (!paymentHandler) {
-      throw new Error('Payment contract not configured for this network')
-    }
-
-    const { tokenAddress, paymentAmount } = signedPaymentRequest.paymentRequest
-
-    const erc20ApproveAbi = [{
-      name: 'approve',
-      type: 'function',
-      stateMutability: 'nonpayable',
-      inputs: [{ name: 'spender', type: 'address' }, { name: 'amount', type: 'uint256' }],
-      outputs: [{ name: '', type: 'bool' }],
-    }] as const
-
-    const processPaymentDirectAbi = [{
-      name: 'processPaymentDirect',
-      type: 'function',
-      stateMutability: 'nonpayable',
-      inputs: [{
-        name: 'request',
-        type: 'tuple',
-        components: [
-          { name: 'deviceSignature', type: 'bytes' },
-          { name: 'timestamp', type: 'uint256' },
-          {
-            name: 'paymentRequest',
-            type: 'tuple',
-            components: [
-              { name: 'paymentAmount', type: 'uint256' },
-              { name: 'tokenAddress', type: 'address' },
-              { name: 'salt', type: 'bytes32' },
-            ],
-          },
-        ],
-      }],
-      outputs: [],
-    }] as const
-
-    const approveData = encodeFunctionData({
-      abi: erc20ApproveAbi,
-      functionName: 'approve',
-      args: [paymentHandler, paymentAmount],
-    })
-
-    const processPaymentData = encodeFunctionData({
-      abi: processPaymentDirectAbi,
-      functionName: 'processPaymentDirect',
-      args: [{
-        deviceSignature: signedPaymentRequest.deviceSignature,
-        timestamp: signedPaymentRequest.timestamp,
-        paymentRequest: {
-          paymentAmount: signedPaymentRequest.paymentRequest.paymentAmount,
-          tokenAddress: signedPaymentRequest.paymentRequest.tokenAddress,
-          salt: signedPaymentRequest.paymentRequest.salt,
-        },
-      }],
-    })
-
-    return this.sendTransaction(credential, [
-      { to: tokenAddress, data: approveData },
-      { to: paymentHandler, data: processPaymentData },
-    ])
-  }
 
   /**
    * Send ERC20 approve(spender, amount) via smart account
@@ -615,9 +445,9 @@ export class SmartAccountService {
       args: [ownerAddress],
     })
 
-    const bundlerClient = this.createBundlerClient(account)
+    const bundlerClientInstance = await this.createBundlerClient(account)
 
-    const userOpHash = await bundlerClient.sendUserOperation({
+    const userOpHash = await bundlerClientInstance.sendUserOperation({
       calls: [{
         to: account.address,
         data,
@@ -626,7 +456,7 @@ export class SmartAccountService {
 
     console.log('📤 addOwnerAddress UserOp submitted:', userOpHash)
 
-    const receipt = await bundlerClient.waitForUserOperationReceipt({
+    const receipt = await bundlerClientInstance.waitForUserOperationReceipt({
       hash: userOpHash,
     })
 

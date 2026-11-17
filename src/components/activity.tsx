@@ -4,7 +4,7 @@ import { useEffect, useState, useRef } from 'react'
 import { useWallet } from './wallet-provider-real'
 import { useNetwork } from './network-provider'
 import { type ActivityItem } from '@/lib/activity'
-import { getExplorerTxUrl } from '@/lib/erc681'
+import { getExplorerTxUrl } from '@/lib/explorer'
 import { Button } from './ui/button'
 import { RefreshCw, ArrowUpRight, ArrowDownLeft, Repeat, Sparkles, FileCheck, ExternalLink, Clock, CheckCircle, XCircle } from 'lucide-react'
 

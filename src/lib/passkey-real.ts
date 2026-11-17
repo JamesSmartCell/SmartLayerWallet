@@ -44,7 +44,7 @@ export class PasskeyService {
       publicKey: {
         rp: {
           id: this.rpId,
-          name: 'GarageDoorKey',
+          name: 'SmartLayerWallet',
         },
         user: {
           id: options.username, // Use username as user ID like real implementation
@@ -192,7 +192,7 @@ export class PasskeyService {
     let credential = this.getStoredPasskey(assertion.id)
     
     if (!credential) {
-      // Create partial credential - caller should fetch from recovery API
+      // Create partial credential - caller should fetch from server API
       credential = {
         id: assertion.id,
         publicKey: '0x' as Hex, // Empty - needs to be filled from storage/API
