@@ -1,0 +1,25 @@
+[Unit]
+Description=SmartLayer Wallet - Next.js Backend
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/dev/SmartLayerWallet
+EnvironmentFile=/home/pi/dev/SmartLayerWallet/.env
+Environment=NODE_ENV=production
+Environment=PORT=8088
+
+# If using nvm or a custom node path, adjust the ExecStart path below:
+# ExecStart=/home/pi/.nvm/versions/node/v20.x.x/bin/node /home/pi/dev/SmartLayerWallet/start-server.js
+ExecStart=/usr/bin/env node /home/pi/dev/SmartLayerWallet/start-server.js
+
+Restart=always
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smartlayer-wallet
+
+[Install]
+WantedBy=multi-user.target

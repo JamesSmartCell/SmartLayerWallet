@@ -442,6 +442,44 @@ npm test           # Run all tests
 npm run test:watch # Watch mode
 ```
 
+## Auto-Deploy to Raspberry Pi
+
+SmartLayerWallet auto-deploys to a Raspberry Pi at `https://wallet.percolate.one` via GitHub Actions.
+
+**Architecture:**
+- Next.js backend: `http://127.0.0.1:8088`
+- HTTPS proxy: `https://wallet.percolate.one:8089` (or port 443)
+- Services: `smartlayer-wallet` + `smartlayer-wallet-https`
+- Database: `./data/wallet.db` (SQLite passkeys, gitignored)
+
+**Auto-deploy workflow:**
+- Push to `main` triggers deployment on self-hosted Pi runner
+- Runs: `git pull`, `npm ci`, `npm test`, `npm run build`, restart services
+- Health check: waits for services to be active and responding
+
+**One-time Pi setup:**
+
+1. Clone repo to `/home/pi/dev/SmartLayerWallet`
+2. Create `.env` from `.env.example` with production values
+3. Install dependencies: `npm ci && npm run build`
+4. Set up SSL certificates with certbot for `wallet.percolate.one`
+5. Install systemd services from `deploy/` directory
+6. Configure passwordless sudo for service restarts
+7. Set up GitHub Actions self-hosted runner with `smartlayer` label
+8. Ensure port 8089 (or 443) is accessible externally
+
+**Detailed setup guide:** See [`deploy/README.md`](deploy/README.md) for complete step-by-step instructions.
+
+**Database persistence:** The SQLite database at `./data/wallet.db` contains all passkey credentials and survives deploys. Back it up regularly.
+
+**Logs:**
+
+```bash
+# View service logs
+sudo journalctl -u smartlayer-wallet -f
+sudo journalctl -u smartlayer-wallet-https -f
+```
+
 ## Project Structure
 
 ```
