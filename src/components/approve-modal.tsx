@@ -116,12 +116,8 @@ export function ApproveModal({
 
   // Auto-populate spender if empty based on selected token's network
   useEffect(() => {
-    if (isOpen && selected) {
-      const networkPaymentContract = NETWORKS[selected.networkKey].paymentContract
-      if (networkPaymentContract) {
-        setSpender(networkPaymentContract)
-      }
-    }
+    // Payment contracts have been removed from this wallet
+    // Users must manually enter spender address
   }, [isOpen, selected])
 
   // Update internal state when props change while modal is open (or just opened)
@@ -139,13 +135,8 @@ export function ApproveModal({
 
   // Suggested Spenders
   const suggestedSpenders = useMemo(() => {
-    const targetNetworks = getEnabledNetworkKeys()
-
-    return targetNetworks.map(key => ({
-      name: `${NETWORKS[key].name} Payment Contract`,
-      address: NETWORKS[key].paymentContract,
-      network: NETWORKS[key].name
-    })).filter(s => s.address)
+    // Payment contracts have been removed from this wallet
+    return []
   }, [])
 
   if (!isOpen) return null
@@ -200,23 +191,6 @@ export function ApproveModal({
             placeholder="0x..."
             className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none mb-2"
           />
-          {suggestedSpenders.length > 0 && (
-            <div className="space-y-1">
-              <p className="text-[10px] uppercase font-bold text-gray-400 px-1 py-1">Suggested Spenders</p>
-              <div className="flex flex-wrap gap-2">
-                {suggestedSpenders.map((s, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => setSpender(s.address)}
-                    className="text-[11px] bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-1 rounded transition-colors flex items-center gap-1"
-                  >
-                    <span>{s.name}</span>
-                    <ExternalLink className="h-2 w-2" />
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Amount */}

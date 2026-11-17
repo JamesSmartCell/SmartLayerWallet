@@ -1,185 +1,89 @@
-# wallet.openpasskey.com
+# SmartLayerWallet
 
-Unified passkey-based smart wallet for the OpenPasskey ecosystem.
+A self-hosted passkey wallet for controlling and reading telemetry from embedded ESP32 devices (GarageDoor NFT-gated firmware and camera).
 
 ## Overview
 
-A cross-app asset management wallet built on ERC-4337 Account Abstraction using Coinbase Smart Wallet contracts. Users authenticate with passkeys (WebAuthn) instead of seed phrases.
+SmartLayerWallet is a Progressive Web App (PWA) that uses WebAuthn passkeys for authentication and ERC-4337 Account Abstraction for blockchain transactions. It runs as a long-lived Node.js server with server-side passkey storage, enabling:
 
-**Live URL:** `https://wallet.openpasskey.com`
-
-## Features
-
-- **Passkey Authentication** - No seed phrases, powered by WebAuthn
-- **Smart Wallet** - ERC-4337 Account Abstraction with Coinbase contracts
-- **Cross-Device Sync** - Recovery API for credential synchronization
-- **Gas Strategies** - User-pays, sponsored, or automatic mode
-- **Base Networks** - Supports Base Mainnet and Base Sepolia
-- **Portfolio View** - All loyalty token balances across merchants
-- **Send/Receive** - Transfer ETH and ERC20 tokens
-
-## Tech Stack
-
-- **Framework**: Next.js 15 (App Router)
-- **Language**: TypeScript
-- **Styling**: TailwindCSS
-- **Blockchain**: viem + permissionless (Account Abstraction)
-- **Smart Wallet**: Coinbase Smart Wallet (ERC-4337)
-- **Auth**: WebAuthn via @github/webauthn-json + webauthn-p256
-- **State**: Wagmi + TanStack Query
+- **Garage Door Control**: NFT-gated ESP32 firmware control via SmartLayerProxy
+- **Camera Access**: Live camera feed and HLS streaming via the `/cam-gate` route
+- **Passkey Authentication**: WebAuthn-based authentication with no seed phrases
+- **Smart Wallet**: Coinbase Smart Wallet (ERC-4337) on Base Sepolia
+- **Cross-Device Sync**: Server-side SQLite storage for passkey recovery
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    wallet.openpasskey.com                       │
-├─────────────────────────────────────────────────────────────────┤
-│  Passkey Service          │  Smart Account Service              │
-│  - WebAuthn registration  │  - Coinbase Smart Wallet            │
-│  - WebAuthn authentication│  - UserOperation building           │
-│  - Key extraction         │  - Bundler submission               │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-              ┌───────────────┴───────────────┐
-              │                               │
-              ▼                               ▼
-    ┌─────────────────┐            ┌─────────────────────┐
-    │  Recovery API   │            │   Base Blockchain   │
-    │                 │            │                     │
-    │  - Key backup   │            │  - Token registry   │
-    │  - Cross-device │            │  - ERC20 transfers  │
-    └─────────────────┘            │  - UserOp execution │
-                                   └─────────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                      SmartLayerWallet                         │
+│  (wallet.percolate.one - Next.js 15 on Node.js)              │
+├──────────────────────────────────────────────────────────────┤
+│  Passkey Auth (WebAuthn)  │  Smart Account (ERC-4337)        │
+│  - Server-side storage    │  - Coinbase Smart Wallet          │
+│  - SQLite database        │  - Base Sepolia                   │
+│  - Challenge/response     │  - Bundler + Paymaster            │
+└──────────────────────────────────────────────────────────────┘
+          │                              │
+          │                              ▼
+          │                   ┌──────────────────┐
+          │                   │  Base Blockchain │
+          │                   │  - Smart Account │
+          │                   │  - ERC20 tokens  │
+          │                   └──────────────────┘
+          ▼
+┌────────────────────────┐
+│  SmartLayerProxy       │
+│  (proxy.percolate.one) │
+│  - Garage door API     │
+│  - ESP32 interface     │
+└────────────────────────┘
+          │
+          ▼
+┌────────────────────────┐
+│  ESP32 Devices         │
+│  - GarageDoor (NFT)    │
+│  - Camera (Pi + ESP32) │
+└────────────────────────┘
 ```
 
-## Smart Wallet Details
+## Tech Stack
 
-### Contracts (Same on all networks)
+- **Framework**: Next.js 15 (App Router) - runs as Node.js server
+- **Language**: TypeScript
+- **Styling**: TailwindCSS + Radix UI
+- **Auth**: WebAuthn via @github/webauthn-json + webauthn-p256
+- **Blockchain**: viem + permissionless (ERC-4337 Account Abstraction)
+- **Smart Wallet**: Coinbase Smart Wallet
+- **Storage**: better-sqlite3 (server-side passkey persistence)
+- **Camera**: hls.js for HLS streaming, MJPEG for live feed
 
-| Contract | Address |
-|----------|---------|
-| EntryPoint v0.6 | `0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789` |
-| Coinbase Smart Wallet Factory | `0xBA5ED110eFDBa3D005bfC882d75358ACBbB85842` |
+## Features
 
-### Token Registry
+### Passkey Authentication
+- No seed phrases or private keys in browser
+- WebAuthn platform authenticators (Face ID, Touch ID, Windows Hello)
+- Cross-device recovery via server-side storage
+- Support for Microsoft/Windows Hello quirks and workarounds
 
-| Network | Address |
-|---------|---------|
-| Base Mainnet | `0x1510271D3b40fde9B5699b188FcbF973655E513E` |
-| Base Sepolia | `0xe22d1DC8145F4B931CDf82245Ea53F1444360BF6` |
+### Smart Wallet
+- Counterfactual ERC-4337 smart account (Coinbase)
+- Gas sponsorship via Coinbase Paymaster on Base Sepolia
+- Send/receive ETH and ERC20 tokens
+- Add owners to multi-owner accounts
 
-## Project Structure
+### Garage Door
+- NFT-gated access control
+- Challenge-response authentication with ESP32
+- Control via SmartLayerProxy at proxy.percolate.one
 
-```
-wallet.openpasskey.com/
-├── src/
-│   ├── app/
-│   │   ├── page.tsx              # Main wallet UI
-│   │   ├── layout.tsx            # Root layout
-│   │   └── globals.css           # Global styles
-│   ├── components/
-│   │   ├── passkey-wallet-demo.tsx
-│   │   ├── real-passkey-wallet-demo.tsx
-│   │   ├── wallet-provider.tsx
-│   │   ├── wallet-provider-real.tsx
-│   │   ├── portfolio.tsx         # Token balances
-│   │   ├── activity.tsx          # Transaction history
-│   │   ├── send-modal.tsx        # Send tokens
-│   │   ├── receive-modal.tsx     # Receive address
-│   │   ├── approve-modal.tsx     # Token approvals
-│   │   └── ui/                   # shadcn components
-│   └── lib/
-│       ├── passkey-real.ts       # WebAuthn service
-│       ├── smart-account-real.ts # ERC-4337 service
-│       ├── recovery-api.ts       # Key recovery
-│       ├── portfolio.ts          # Balance fetching
-│       ├── activity.ts           # Transaction history
-│       ├── pricing.ts            # Token prices
-│       └── env.ts                # Environment config
-├── docs/
-│   └── wallet.openpasskey.com-PRD.md
-└── public/
-    └── manifest.json             # PWA manifest
-```
+### Camera
+- Live MJPEG stream at `/cam-gate/live/mjpeg`
+- HLS stream at `/cam-gate/hls/stream.m3u8`
+- Snapshots at `/cam-gate/snapshot/latest.jpg`
+- Proxied via server-https.js to Raspberry Pi camera
 
-## Key Services
-
-### PasskeyService (`lib/passkey-real.ts`)
-
-Handles WebAuthn credential creation and authentication:
-
-```typescript
-class PasskeyService {
-  // Create new passkey credential
-  async create(options: { username: string; challenge: Hex }): Promise<PasskeyCredential>
-  
-  // Authenticate with existing passkey
-  async authenticate(options: { challenge: Hex; credentialId?: string }): Promise<{
-    credential: PasskeyCredential | null
-    signature: any
-    webauthn: any
-  }>
-}
-```
-
-### SmartAccountService (`lib/smart-account-real.ts`)
-
-ERC-4337 smart wallet operations:
-
-```typescript
-class SmartAccountService {
-  // Create Coinbase Smart Account from passkey
-  async createSmartAccount(credential: PasskeyCredential): Promise<SmartAccount>
-  
-  // Send UserOperation
-  async sendTransaction(credential: PasskeyCredential, calls: UserOperationCall[]): Promise<Hex>
-  
-  // ERC20 operations
-  async sendErc20(credential, token, to, amount): Promise<Hex>
-  async approveErc20(credential, token, spender, amount): Promise<Hex>
-  
-  // Registry balance fetch
-  async getRegistryBalances(user: Address): Promise<{ tokens: Address[]; balances: bigint[] }>
-}
-```
-
-## User Flows
-
-### New User
-
-1. Click "Create New Passkey Wallet"
-2. Browser creates WebAuthn credential
-3. Public key extracted from attestation
-4. Sync to Recovery API
-5. Counterfactual address computed
-6. Ready to receive funds
-
-### Existing User
-
-1. Click "Connect with Passkey"
-2. WebAuthn authentication
-3. Credential ID matched to stored key
-4. Address derived from public key
-5. Check deployment status
-6. Ready to transact
-
-### First Transaction
-
-1. Build UserOperation with initCode (deploys wallet)
-2. Apply gas strategy (auto/user/sponsored)
-3. Sign with passkey
-4. Submit to Coinbase bundler
-5. Account deployed + transaction executed
-
-## Gas Strategies
-
-| Mode | Behavior |
-|------|----------|
-| `auto` | User-pays first, fallback to sponsored on insufficient funds |
-| `user` | Always user-pays with own ETH |
-| `sponsored` | Always use Coinbase Paymaster (if policy allows) |
-
-## Development Setup
+## Setup
 
 ### Prerequisites
 
@@ -194,32 +98,302 @@ npm install
 
 ### Environment Configuration
 
-Create `.env.local`:
+Copy `.env.example` to `.env` and fill in your values:
 
-```env
-# Required: Coinbase CDP API key (domain-allowlisted)
-NEXT_PUBLIC_CDP_API_KEY=pk_your_coinbase_api_key
-
-# Optional (using defaults)
-NEXT_PUBLIC_RP_ID=openpasskey.com
-NEXT_PUBLIC_GAS_MODE=auto
-NEXT_PUBLIC_RECOVERY_API_BASE=https://api.openpasskey.com
+```bash
+cp .env.example .env
 ```
 
-### Run Development Server
+Required variables:
+
+- `NEXT_PUBLIC_CDP_API_KEY`: Coinbase CDP API key (get from [Coinbase Developer Platform](https://portal.cdp.coinbase.com/))
+- `WALLET_DB_PATH`: Path to SQLite database (defaults to `./data/wallet.db`)
+
+Optional variables:
+
+- `NEXT_PUBLIC_RP_ID`: WebAuthn Relying Party ID (auto-detected from hostname)
+- `NEXT_PUBLIC_GARAGE_DOOR_NFT_ADDRESS`: Garage door NFT contract address
+- `NEXT_PUBLIC_IOT_DEVICE_ADDRESS`: Garage door ESP32 device address
+- `NEXT_PUBLIC_IOT_CAMERA_ADDRESS`: Camera ESP32 device address
+- `NEXT_PUBLIC_GARAGE_API_BASE`: SmartLayerProxy base URL
+- `NEXT_PUBLIC_GARAGE_ADMIN_ADDRESSES`: Comma-separated admin addresses
+
+### Database Initialization
+
+The SQLite database is created automatically on first run at the path specified by `WALLET_DB_PATH`. The schema includes:
+
+- `passkeys`: Credential storage (id, public_key, rp_id, user_handle, address, timestamps, sign_count)
+- `challenges`: WebAuthn challenge storage with expiry and single-use enforcement
+- `rate_limits`: Simple per-IP rate limiting for API routes
+
+## Running
+
+### Development
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
+Opens at `http://localhost:8089`
 
-### Build for Production
+### Production
+
+Build and run:
 
 ```bash
 npm run build
 npm run start
 ```
+
+Runs Next.js on port 8088.
+
+### HTTPS with server-https.js
+
+For production deployment with TLS:
+
+```bash
+# Set certificate paths (or use defaults for Let's Encrypt at /etc/letsencrypt/live/wallet.percolate.one/)
+export SSL_CERT=/path/to/fullchain.pem
+export SSL_KEY=/path/to/privkey.pem
+
+# Run HTTPS proxy (port 8089 -> Next.js on 8088)
+npm run start:https
+```
+
+The HTTPS proxy:
+- Serves Next.js on port 8089 (configurable via `PORT`)
+- Proxies `/cam-gate/*` to Raspberry Pi camera (default: `http://127.0.0.1:8787`)
+- Allows unlimited streaming timeouts for camera feeds
+
+## API Routes
+
+### Passkey API
+
+All routes enforce rate limiting and challenge expiry.
+
+#### `GET /api/passkey/challenge`
+
+Create a new WebAuthn challenge.
+
+Query params:
+- `type`: `registration` or `authentication` (default: `authentication`)
+
+Response:
+```json
+{
+  "challenge": "0x...",
+  "expiresAt": "2024-01-01T00:00:00.000Z"
+}
+```
+
+#### `POST /api/passkey/register`
+
+Register a new passkey.
+
+Body:
+```json
+{
+  "credentialId": "...",
+  "publicKey": "0x04...",
+  "rpId": "percolate.one",
+  "userHandle": "user@example.com",
+  "smartAccountAddress": "0x...",
+  "challenge": "0x...",
+  "attestationObject": "...",
+  "clientDataJSON": "..."
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "credentialId": "..."
+}
+```
+
+#### `POST /api/passkey/authenticate`
+
+Authenticate with a passkey.
+
+Body:
+```json
+{
+  "credentialId": "...",
+  "challenge": "0x...",
+  "authenticatorData": "...",
+  "clientDataJSON": "...",
+  "signature": "..."
+}
+```
+
+Response:
+```json
+{
+  "success": true,
+  "credentialId": "...",
+  "publicKey": "0x04...",
+  "smartAccountAddress": "0x...",
+  "userHandle": "..."
+}
+```
+
+#### `GET /api/passkey/[credentialId]`
+
+Retrieve passkey by credential ID (for cross-device recovery).
+
+Response:
+```json
+{
+  "credentialId": "...",
+  "publicKey": "0x04...",
+  "rpId": "percolate.one",
+  "smartAccountAddress": "0x...",
+  "userHandle": "...",
+  "createdAt": "2024-01-01T00:00:00.000Z",
+  "lastUsed": "2024-01-01T00:00:00.000Z"
+}
+```
+
+## Passkey Server-Side Storage
+
+Passkeys are stored server-side in SQLite to enable cross-device recovery and multi-browser support.
+
+### Storage Schema
+
+Each passkey record contains:
+- Credential ID
+- Public key (P-256 in 0x04||x||y format)
+- RP ID (Relying Party ID)
+- User handle (username/email)
+- Smart account address (ERC-4337 account)
+- Created/last-used timestamps
+- Sign counter (WebAuthn counter)
+
+### Challenge Management
+
+Challenges are:
+- Generated server-side with crypto.randomBytes
+- Valid for 5 minutes (configurable TTL)
+- Single-use (marked as used after verification)
+- Automatically cleaned up on expiry
+
+### Rate Limiting
+
+Simple per-IP rate limiting:
+- Challenge endpoint: 20 requests/minute
+- Register endpoint: 5 requests/5 minutes
+- Authenticate endpoint: 10 requests/minute
+- Get passkey endpoint: 20 requests/minute
+
+### Migration from Existing Passkeys
+
+If you have existing passkeys in localStorage from an external backend:
+
+1. On first login with the new system, the client will detect missing server-side passkeys
+2. The passkey will be automatically upserted to the server
+3. Subsequent logins on other devices will load from the server
+
+Note: This is a one-way migration. Old external backend passkeys are not deleted.
+
+## Microsoft/Windows Hello Support
+
+The wallet includes workarounds for Microsoft Authenticator and Windows Hello:
+
+- Omits `authenticatorAttachment` to allow password manager passkeys
+- Uses `residentKey: 'preferred'` instead of `'required'`
+- Sets `requireResidentKey: false` for broader compatibility
+- Handles Windows Hello certificate chain validation quirks
+- Works around Edge-specific WebAuthn behavior
+
+See `src/lib/passkey-real.ts` for implementation details.
+
+## Camera Integration
+
+The camera is accessed via the `/cam-gate` route proxied through `server-https.js`:
+
+- `/cam-gate/live/mjpeg`: Live MJPEG stream
+- `/cam-gate/hls/stream.m3u8`: HLS adaptive streaming
+- `/cam-gate/snapshot/latest.jpg`: Latest snapshot
+- `/cam-gate/challenge`: Get auth challenge from camera ESP32
+- `/cam-gate/auth`: Authenticate with camera
+- `/cam-gate/health`: Camera health check
+
+The camera runs on a Raspberry Pi 5 connected via SSH reverse tunnel (default: `127.0.0.1:8787`).
+
+## Deployment
+
+### Production Deployment
+
+1. Build the app:
+```bash
+npm run build
+```
+
+2. Set up systemd service for Next.js:
+```ini
+[Unit]
+Description=SmartLayerWallet Next.js
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/smartlayer-wallet
+Environment="NODE_ENV=production"
+Environment="PORT=8088"
+EnvironmentFile=/var/www/smartlayer-wallet/.env
+ExecStart=/usr/bin/npm start
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+3. Set up systemd service for HTTPS proxy:
+```ini
+[Unit]
+Description=SmartLayerWallet HTTPS Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=/var/www/smartlayer-wallet
+Environment="NODE_ENV=production"
+Environment="PORT=8089"
+Environment="BACKEND_PORT=8088"
+Environment="SSL_CERT=/etc/letsencrypt/live/wallet.percolate.one/fullchain.pem"
+Environment="SSL_KEY=/etc/letsencrypt/live/wallet.percolate.one/privkey.pem"
+EnvironmentFile=/var/www/smartlayer-wallet/.env
+ExecStart=/usr/bin/node server-https.js
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+4. Enable and start services:
+```bash
+sudo systemctl enable smartlayer-wallet
+sudo systemctl enable smartlayer-wallet-https
+sudo systemctl start smartlayer-wallet
+sudo systemctl start smartlayer-wallet-https
+```
+
+### TLS Certificates
+
+Use Let's Encrypt with certbot:
+
+```bash
+sudo certbot certonly --standalone -d wallet.percolate.one
+```
+
+Certificates are stored at:
+- `/etc/letsencrypt/live/wallet.percolate.one/fullchain.pem`
+- `/etc/letsencrypt/live/wallet.percolate.one/privkey.pem`
+
+## Development
 
 ### Type Checking
 
@@ -227,42 +401,90 @@ npm run start
 npm run type-check
 ```
 
-## Security
+### Linting
 
-- **No private keys in browser** - Keys only exist in platform authenticator
-- **Domain-allowlisted API keys** - CDP keys restricted to specific domains
-- **Passkey-only signing** - No seed phrases or mnemonic exposure
-- **CSP headers** - Content Security Policy enabled
-- **Minimal PII logging** - Privacy-focused logging
-
-## WebAuthn Configuration
-
-```typescript
-// Registration options
-{
-  rp: { id: 'openpasskey.com', name: 'Passkey Wallet' },
-  authenticatorSelection: {
-    authenticatorAttachment: 'platform',
-    userVerification: 'required',
-    residentKey: 'required'
-  },
-  pubKeyCredParams: [{ type: 'public-key', alg: -7 }] // ES256 (P-256)
-}
+```bash
+npm run lint
 ```
 
-## Integration with OpenPasskey
+### Testing
 
-The wallet integrates with the OpenPasskey ecosystem by:
+```bash
+npm test           # Run all tests
+npm run test:watch # Watch mode
+```
 
-1. **Reading from LoyaltyRegistry** - Fetches all user token balances via paginated `getAllBalances()`
-2. **ERC20 transfers** - Send loyalty tokens between users
-3. **Shared rpId** - Uses `openpasskey.com` for cross-app passkey compatibility
+## Project Structure
 
-## Related Repositories
+```
+smartlayer-wallet/
+├── src/
+│   ├── app/
+│   │   ├── page.tsx              # Main wallet UI
+│   │   ├── layout.tsx            # Root layout
+│   │   ├── globals.css           # Global styles
+│   │   ├── cam-gate/             # Camera proxy route
+│   │   └── api/
+│   │       └── passkey/          # Passkey API routes
+│   │           ├── challenge/
+│   │           ├── register/
+│   │           ├── authenticate/
+│   │           └── [credentialId]/
+│   ├── components/
+│   │   ├── wallet-provider-real.tsx  # Wallet context provider
+│   │   ├── network-provider.tsx      # Network switching
+│   │   ├── portfolio.tsx             # Token balances
+│   │   ├── activity.tsx              # Transaction history
+│   │   ├── send-modal.tsx            # Send tokens
+│   │   ├── receive-modal.tsx         # Receive address
+│   │   ├── approve-modal.tsx         # Token approvals
+│   │   ├── add-owner-modal.tsx       # Multi-owner support
+│   │   ├── live-camera.tsx           # Camera feed component
+│   │   └── ui/                       # Radix UI components
+│   └── lib/
+│       ├── passkey-real.ts           # WebAuthn service (with MS fixes)
+│       ├── passkey-store.ts          # Server-side SQLite storage
+│       ├── smart-account-real.ts     # ERC-4337 service
+│       ├── recovery-api.ts           # Passkey backend API client
+│       ├── garage-door.ts            # Garage door control
+│       ├── mjpeg-player.ts           # MJPEG streaming
+│       ├── activity.ts               # Transaction history
+│       ├── portfolio.ts              # Balance fetching
+│       ├── explorer.ts               # Block explorer URLs
+│       ├── env.ts                    # Environment config
+│       └── utils.ts                  # Utilities
+├── public/
+│   └── manifest.json                 # PWA manifest
+├── server-https.js                   # HTTPS proxy + camera gateway
+├── .env.example                      # Environment template
+├── data/                             # SQLite database (gitignored)
+│   └── wallet.db
+└── package.json
 
-| Repository | Description |
-|------------|-------------|
-| [token-kit](https://github.com/Open-Passkey/token-kit) | Backend APIs |
-| [smartcontract](https://github.com/Open-Passkey/smartcontract) | Token contracts |
-| [app.openpasskey.com](https://github.com/Open-Passkey/app.openpasskey.com) | Consumer mini-apps |
-| [merchant.openpasskey.com](https://github.com/Open-Passkey/merchant.openpasskey.com) | Merchant portal |
+```
+
+## Security
+
+- **No private keys in browser**: Keys only exist in platform authenticators
+- **Server-side storage**: Passkeys stored in SQLite with challenge expiry
+- **Rate limiting**: Per-IP limits on all API routes
+- **Challenge single-use**: Each challenge can only be used once
+- **Domain-restricted API keys**: CDP keys restricted to specific domains
+- **CSP headers**: Content Security Policy enabled
+- **No seed phrases**: Passkey-only authentication
+
+## Contract Addresses
+
+### EntryPoint v0.6 (all networks)
+`0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789`
+
+### Coinbase Smart Wallet Factory (all networks)
+`0x0BA5ED0c6AA8c49038F819E587E2633c4A9F428a`
+
+## License
+
+Private - All Rights Reserved
+
+## Support
+
+For issues or questions, contact the repository owner.

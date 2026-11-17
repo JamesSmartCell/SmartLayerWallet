@@ -75,8 +75,6 @@ export const ENV = {
   // Passkey/WebAuthn with environment-specific rpId for wallet.percolate.one
   RP_ID: getEnvironmentRpId(),
   ENVIRONMENT: getEnvironment(),
-  // Backend API (passkey endpoints) - must point to SmartLayerProxy
-  BACKEND_API_BASE: process.env.NEXT_PUBLIC_BACKEND_API_URL || 'https://proxy.percolate.one/api',
 
   // Client key used by OnchainKit or direct RPC calls
   CDP_API_KEY: process.env.NEXT_PUBLIC_CDP_API_KEY || '',
@@ -103,29 +101,8 @@ export const ENV = {
     ENTRY_POINT: process.env.NEXT_PUBLIC_ENTRY_POINT as `0x${string}` || '0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789',
     // Coinbase Account Factory (all EVM)
     ACCOUNT_FACTORY: process.env.NEXT_PUBLIC_ACCOUNT_FACTORY as `0x${string}` || '0x0BA5ED0c6AA8c49038F819E587E2633c4A9F428a',
-    // Token Registry (loyalty tokens) moved to NETWORKS configuration
   },
 
-  // Minimal Recovery API (EXACT openpasskey.com endpoint)
-  RECOVERY_API_BASE: process.env.NEXT_PUBLIC_RECOVERY_API_BASE || 'https://api.openpasskey.com',
-
-  // Payment backend for devicesession, CoSignedPaymentRequest, etc.
-  // Uses NEXT_PUBLIC_PAYMENT_BACKEND if set; otherwise defaults by environment.
-  PAYMENT_BACKEND:
-    process.env.NEXT_PUBLIC_PAYMENT_BACKEND ||
-    (getEnvironment() === 'proto'
-      ? 'https://apiproto.openpasskey.app:8444'
-      : getEnvironment() === 'dev'
-        ? 'https://apidev.openpasskey.app:8444'
-        : getEnvironment() === 'prod'
-          ? 'https://api.openpasskey.app:8444'
-          : ''),
-
-  // Payment contract for Base Sepolia (used in payment request signing)
-  PAYMENT_CONTRACT_BASE_SEPOLIA: process.env.NEXT_PUBLIC_PAYMENT_CONTRACT_BASE_SEPOLIA as `0x${string}` || '',
-
-  // Optional: expected address for debug/verification (e.g., mini-app known correct)
-  EXPECTED_ADDRESS: (process.env.NEXT_PUBLIC_EXPECTED_ADDRESS || '').toLowerCase(),
   COINBASE_CLIENT_API_KEY: process.env.NEXT_PUBLIC_COINBASE_CLIENT_API_KEY || 'QDqpZt4prDdITV2NZEfeeRgWd84BiWOC',
 } as const
 
@@ -139,8 +116,6 @@ export const NETWORKS = {
     publicRpc: process.env.NEXT_PUBLIC_NODE_RPC_MAINNET || `https://ethereum-rpc.publicnode.com`,
     paymaster: false,
     chain: mainnet,
-    tokenRegistry: process.env.NEXT_PUBLIC_TOKEN_REGISTRY_BASE as `0x${string}` || '',
-    paymentContract: process.env.NEXT_PUBLIC_PAYMENT_CONTRACT_MAINNET as `0x${string}` || '',
     tokens: {
       USDC: {
         address: '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48' as `0x${string}`,
@@ -175,8 +150,6 @@ export const NETWORKS = {
     publicRpc: process.env.NEXT_PUBLIC_NODE_RPC_BASE || `https://mainnet.base.org`,
     paymaster: true,
     chain: base,
-    tokenRegistry: process.env.NEXT_PUBLIC_TOKEN_REGISTRY_BASE as `0x${string}` || '',
-    paymentContract: process.env.NEXT_PUBLIC_PAYMENT_CONTRACT_MAINNET as `0x${string}` || '',
     tokens: {
       USDC: {
         address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913' as `0x${string}`,
@@ -205,8 +178,6 @@ export const NETWORKS = {
     publicRpc: process.env.NEXT_PUBLIC_NODE_RPC_BASE_SEPOLIA || `https://sepolia.base.org`,
     paymaster: true,
     chain: baseSepolia,
-    tokenRegistry: process.env.NEXT_PUBLIC_TOKEN_REGISTRY_BASE_SEPOLIA as `0x${string}` || '0xe22d1DC8145F4B931CDf82245Ea53F1444360BF6',
-    paymentContract: process.env.NEXT_PUBLIC_PAYMENT_CONTRACT_BASE_SEPOLIA as `0x${string}` || '0x41350316C7e02fa290dBF0f98d29A80E7297Da44',
     tokens: {
       USDC: {
         address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e' as `0x${string}`,
@@ -230,8 +201,6 @@ export const NETWORKS = {
     publicRpc: process.env.NEXT_PUBLIC_NODE_RPC_SEPOLIA || `https://ethereum-sepolia-rpc.publicnode.com`,
     paymaster: false,
     chain: sepolia,
-    tokenRegistry: process.env.NEXT_PUBLIC_TOKEN_REGISTRY_SEPOLIA as `0x${string}` || '',
-    paymentContract: process.env.NEXT_PUBLIC_PAYMENT_CONTRACT_SEPOLIA as `0x${string}` || '',
     tokens: {
       SLN: {
         address: '0x0404ab3994ED48C300cE219546f757AD34484Dc7' as `0x${string}`,
@@ -262,8 +231,6 @@ export function getEndpointsForNetwork(networkKey: NetworkKey) {
     chainId: network.id,
     chainName: network.name,
     chain: network.chain,
-    tokenRegistry: network.tokenRegistry,
-    paymentContract: network.paymentContract,
     tokens: network.tokens,
   }
 }
@@ -276,11 +243,7 @@ export function validateEnv(): void {
   if (missing.length > 0) {
     console.warn('Missing required environment variables:', missing.join(', '))
     console.warn('Some features may not work properly. See README for setup instructions.')
-
-    // Only throw in production
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(`Missing required environment variables: ${missing.join(', ')}`)
-    }
+    // Don't throw during build - env vars are loaded at runtime
   }
 }
 

@@ -4,12 +4,10 @@ import React, { createContext, useContext, useCallback, useEffect, useMemo, useR
 import { Address, Hex } from 'viem'
 import { PasskeyService, PasskeyCredential } from '@/lib/passkey-real'
 import { SmartAccountService, UserOperationCall } from '@/lib/smart-account-real'
-import { RecoveryApiService, PasskeyBackendService } from '@/lib/recovery-api'
+import { PasskeyBackendService } from '@/lib/recovery-api'
 import { ActivityService, type ActivityItem } from '@/lib/activity'
 import { ENV } from '@/lib/env'
 import { useNetwork } from '@/components/network-provider'
-import { getPaymentRequestSignHash, signPaymentRequestHash } from '@/lib/payment-request'
-import { decodePaymentError } from '@/lib/payment-errors'
 
 /**
  * Real Wallet Provider Implementation
@@ -63,23 +61,6 @@ interface WalletContextValue extends WalletState {
   addOwner: (ownerAddress: Address) => Promise<Hex>
   isOwnerAddress: (ownerAddress: Address) => Promise<boolean>
 
-  // Payment request (CoSignedPaymentRequest for PaymentHandlerDeployCandidate)
-  signPaymentRequest: (signedPaymentRequest: {
-    deviceSignature: Hex
-    timestamp: bigint
-    paymentRequest: { paymentAmount: bigint; tokenAddress: Hex; salt: Hex }
-  }) => Promise<Hex>
-
-  // Direct payment via processPaymentDirect - UserOp from smart account, no user signature needed
-  sendPaymentDirect: (signedPaymentRequest: {
-    deviceSignature: Hex
-    timestamp: bigint
-    paymentRequest: { paymentAmount: bigint; tokenAddress: Hex; salt: Hex }
-  }) => Promise<Hex>
-
-  // Check balance/allowance before payment
-  checkPaymentReadiness: (paymentRequest: { paymentAmount: bigint; tokenAddress: Hex }) => Promise<{ ok: boolean; error?: string }>
-
   // Utility methods
   refreshBalance: () => Promise<void>
   getTransactionHistory: () => Promise<ActivityItem[]>
@@ -128,8 +109,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const passkeyService = useMemo(() => new PasskeyService(state.rpId), [state.rpId])
   // SmartAccountService now takes the selected network
   const smartAccountService = useMemo(() => new SmartAccountService(selectedNetwork), [selectedNetwork])
-  const recoveryService = useMemo(() => new RecoveryApiService(), [])
-  const backendService = useMemo(() => new PasskeyBackendService(), [])
 
   // Ensure publicKey is uncompressed 0x04||x||y
   function toUncompressedPublicKey(input: string): Hex {
@@ -156,49 +135,50 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('🔐 Starting sign-up for username:', username)
       
-      // Fetch registration options from backend (openpasskey.com pattern)
-      const reg = await backendService.getRegistrationChallenge()
-      if (!reg?.success) throw new Error(reg?.error || 'Failed to get registration options')
-      const { sessionId, options } = reg.data
-      
-      // Create passkey with backend-provided options
-      const { credential, attestation } = await passkeyService.createWithBackendOptions(options, username)
-      
-      // Verify registration with backend
-      const verify = await backendService.verifyRegistrationChallenge(sessionId, attestation)
-      if (!verify?.success) throw new Error(verify?.error || 'Registration verification failed')
+      // Get challenge from our API
+      const backendService = new PasskeyBackendService()
+      let challenge
+      try {
+        const challengeResponse = await backendService.getChallenge('registration')
+        challenge = challengeResponse.challenge
+      } catch (error) {
+        console.warn('Failed to get challenge from backend, using local:', error)
+        challenge = PasskeyService.generateChallenge()
+      }
 
-      // Use backend-verified public key (matches what device recovers from signature)
-      const verifiedPublicKey = verify.data?.publicKey as `0x${string}` || credential.publicKey
+      // Create passkey
+      const credential = await passkeyService.create({ username, challenge })
 
-      // Build credential with verified key for SDK
-      const credentialWithVerifiedKey = { ...credential, publicKey: verifiedPublicKey }
+      // Use SDK canonical address
+      const walletAddress = await smartAccountService.getSmartAccountAddress(credential) as `0x${string}`
 
-      // Use SDK canonical address (toCoinbaseSmartAccount → getSmartAccountAddress)
-      const walletAddress = await smartAccountService.getSmartAccountAddress(credentialWithVerifiedKey) as `0x${string}`
-
-      // Create user object following real implementation schema
+      // Create user object
       const user = {
         id: crypto.randomUUID(),
         username,
         walletAddress: walletAddress as `0x${string}`,
         passkeyId: credential.id,
-        passkeyPublicKey: verifiedPublicKey,
+        passkeyPublicKey: credential.publicKey,
         createdAt: new Date(),
         updatedAt: new Date(),
       }
 
-      // Store in recovery API for cross-device sync
-      // Store xyHex (x||y only, 64+64 hex). Strip 0x04 if present.
-      const full = verifiedPublicKey.startsWith('0x') ? verifiedPublicKey.slice(2) : verifiedPublicKey
-      const xyHex = full.startsWith('04') ? full.slice(2) : full
-      await recoveryService.upsertPasskey({
-        credentialId: credential.id,
-        rpId: state.rpId,
-        xyHex,
-      })
+      // Store passkey on server for cross-device sync
+      try {
+        await backendService.registerPasskey({
+          credentialId: credential.id,
+          publicKey: credential.publicKey,
+          rpId: state.rpId,
+          userHandle: username,
+          smartAccountAddress: walletAddress,
+          challenge,
+        })
+      } catch (error) {
+        console.warn('Failed to register passkey on server:', error)
+        // Continue anyway - passkey is stored locally
+      }
       
-      // Store user session locally (in real implementation, this would be server-side)
+      // Store user session locally
       localStorage.setItem('wallet_user', JSON.stringify(user))
       
       // Check if account is deployed
@@ -227,7 +207,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         error: error.message || 'Sign-up failed',
       })
     }
-  }, [passkeyService, smartAccountService, recoveryService, backendService, updateState, state.rpId])
+  }, [passkeyService, smartAccountService, updateState, state.rpId])
 
   /**
    * Login with existing passkey - EXACT pattern from real implementation
@@ -238,61 +218,57 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('🔐 Starting login:', credentialId ? 'with specific credential' : 'discoverable')
       
-      // Fetch authentication options from backend
-      const auth = await backendService.getAuthChallenge(credentialId)
-      if (!auth?.success) throw new Error(auth?.error || 'Failed to get auth options')
-      const { sessionId, options } = auth.data
-      
-      // Authenticate with passkey using backend options
-      const { assertion } = await passkeyService.authenticateWithBackendOptions(options)
-      
-      // Verify assertion with backend
-      const verify = await backendService.verifyAuthChallenge(sessionId, assertion)
-      if (!verify?.success) throw new Error(verify?.error || 'Auth verification failed')
-      
-      // Build minimal credential from verified payload or stored key
-      const credential: PasskeyCredential = {
-        id: verify.data.id,
-        publicKey: verify.data.publicKey ? toUncompressedPublicKey(verify.data.publicKey) : ('0x' as Hex),
-        rpId: verify.data.rpId,
-        username: undefined,
+      // Get challenge from our API
+      const backendService = new PasskeyBackendService()
+      let challenge
+      try {
+        const challengeResponse = await backendService.getChallenge('authentication')
+        challenge = challengeResponse.challenge
+      } catch (error) {
+        console.warn('Failed to get challenge from backend, using local:', error)
+        challenge = PasskeyService.generateChallenge()
       }
       
-      // Verified by backend; proceed
+      // Authenticate with passkey
+      const result = await passkeyService.authenticate({ challenge, credentialId })
       
-      // Build minimal credential; fill from recovery API if needed
-      let vc = credential
+      if (!result.credential) {
+        throw new Error('Failed to authenticate - no credential returned')
+      }
       
-      // If credential missing public key, fetch from recovery API
+      let vc = result.credential
+      
+      // If credential missing public key, fetch from server
       if (vc.publicKey === '0x') {
-        console.log('🔍 Fetching public key from recovery API...')
-        const recovered = await recoveryService.getPasskey(vc.id)
+        console.log('🔍 Fetching public key from server...')
+        const backendService = new PasskeyBackendService()
+        const recovered = await backendService.getPasskey(vc.id)
         
         if (!recovered) {
-          throw new Error('Credential not found in recovery API')
+          throw new Error('Credential not found on server')
         }
         
         vc = {
-          ...vc,
-          publicKey: (`0x04${recovered.xyHex}`) as Hex,
+          id: vc.id,
+          rpId: vc.rpId,
+          username: vc.username,
+          publicKey: recovered.publicKey,
         }
         
         // Update local storage
         passkeyService.updateStoredPasskey(vc.id, vc.publicKey)
       }
       
-      // Note: backend already verified the WebAuthn assertion. No local signature verification required here.
-      
-      // Use SDK canonical address (toCoinbaseSmartAccount → getSmartAccountAddress)
+      // Use SDK canonical address
       const walletAddress = await smartAccountService.getSmartAccountAddress(vc) as `0x${string}`
       
-      // Create/load user object - always use backend-verified public key
+      // Load or create user object
       let user = JSON.parse(localStorage.getItem('wallet_user') || 'null')
       
       if (!user || user.passkeyId !== vc.id) {
         user = {
           id: crypto.randomUUID(),
-          username: vc.username || 'Unknown User',
+          username: vc.username || 'User',
           walletAddress,
           passkeyId: vc.id,
           passkeyPublicKey: vc.publicKey,
@@ -301,7 +277,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
         localStorage.setItem('wallet_user', JSON.stringify(user))
       } else if (user.passkeyPublicKey !== vc.publicKey) {
-        // Update stored key if backend has a different (correct) one
         user = { ...user, passkeyPublicKey: vc.publicKey, updatedAt: new Date() }
         localStorage.setItem('wallet_user', JSON.stringify(user))
       }
@@ -333,7 +308,7 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       })
       throw error
     }
-  }, [passkeyService, smartAccountService, recoveryService, backendService, updateState])
+  }, [passkeyService, smartAccountService, updateState])
 
   /**
    * Logout - clear session
@@ -456,25 +431,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state.user, state.rpId, smartAccountService, updateState])
 
-  /**
-   * Sign a payment request for CoSignedPaymentRequest (EIP-712 typed data)
-   * Uses NEXT_PUBLIC_PAYMENT_CONTRACT_BASE_SEPOLIA and chainId 84532 for Base Sepolia
-   */
-  const signPaymentRequest = useCallback(
-    async (signedPaymentRequest: {
-      deviceSignature: Hex
-      timestamp: bigint
-      paymentRequest: { paymentAmount: bigint; tokenAddress: Hex; salt: Hex }
-    }) => {
-      if (!state.user) throw new Error('Not connected')
-      const contractAddress = ENV.PAYMENT_CONTRACT_BASE_SEPOLIA
-      if (!contractAddress) throw new Error('Payment contract not configured (NEXT_PUBLIC_PAYMENT_CONTRACT_BASE_SEPOLIA)')
-      const chainId = 84532 // Base Sepolia
-      const hash = getPaymentRequestSignHash(signedPaymentRequest, chainId, contractAddress)
-      return signPaymentRequestHash(hash, state.user.passkeyId, state.rpId)
-    },
-    [state.user, state.rpId]
-  )
 
   const getErc20Balances = useCallback(async () => {
     if (!state.address) return []
@@ -487,73 +443,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     }
   }, [state.address, smartAccountService])
 
-  /**
-   * Send payment via processPaymentDirect - UserOp from smart account (msg.sender).
-   * User signs UserOp with passkey - same flow as send ERC20.
-   */
-  const sendPaymentDirect = useCallback(
-    async (signedPaymentRequest: {
-      deviceSignature: Hex
-      timestamp: bigint
-      paymentRequest: { paymentAmount: bigint; tokenAddress: Hex; salt: Hex }
-    }) => {
-      if (!state.user || !state.address) throw new Error('Not connected')
-      const credential: PasskeyCredential = {
-        id: state.user.passkeyId,
-        publicKey: state.user.passkeyPublicKey,
-        rpId: state.rpId,
-        username: state.user.username,
-      }
-      updateState({ isLoading: true })
-      try {
-        const txHash = await smartAccountService.sendPaymentDirect(credential, signedPaymentRequest)
-        updateState({ isLoading: false })
-        setTimeout(() => refreshBalance(), 2000)
-
-        // Send to payment backend for internal accounting (fire-and-forget)
-        const backend = ENV.PAYMENT_BACKEND
-        if (backend && state.address) {
-          const accountingPayload = {
-            signedPaymentRequest: {
-              deviceSignature: signedPaymentRequest.deviceSignature,
-              timestamp: signedPaymentRequest.timestamp.toString(),
-              paymentRequest: {
-                paymentAmount: signedPaymentRequest.paymentRequest.paymentAmount.toString(),
-                tokenAddress: signedPaymentRequest.paymentRequest.tokenAddress,
-                salt: signedPaymentRequest.paymentRequest.salt,
-              },
-            },
-            userAddress: state.address,
-            txHash,
-          }
-          fetch(`${backend.replace(/\/$/, '')}/payment-direct-accounting`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(accountingPayload),
-          }).catch(() => {})
-        }
-
-        return txHash
-      } catch (error: unknown) {
-        const friendlyMessage = decodePaymentError(error)
-        updateState({ isLoading: false, error: friendlyMessage })
-        throw new Error(friendlyMessage)
-      }
-    },
-    [state.user, state.address, state.rpId, smartAccountService, updateState, refreshBalance]
-  )
-
-  const checkPaymentReadiness = useCallback(
-    async (paymentRequest: { paymentAmount: bigint; tokenAddress: Hex }) => {
-      if (!state.address) return { ok: false, error: 'Not connected' }
-      return smartAccountService.checkPaymentReadiness(
-        state.address,
-        paymentRequest.tokenAddress,
-        paymentRequest.paymentAmount
-      )
-    },
-    [state.address, smartAccountService]
-  )
 
   /**
    * Get transaction history via ActivityService (on-chain log queries)
@@ -696,9 +585,6 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     getErc20Balances,
     addOwner,
     isOwnerAddress,
-    signPaymentRequest,
-    sendPaymentDirect,
-    checkPaymentReadiness,
     getTransactionHistory,
   }
 
