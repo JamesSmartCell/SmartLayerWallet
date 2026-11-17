@@ -1,0 +1,46 @@
+[Unit]
+Description=SmartLayer Wallet - HTTPS Reverse Proxy
+After=network.target smartlayer-wallet.service
+Requires=smartlayer-wallet.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/dev/SmartLayerWallet
+EnvironmentFile=/home/pi/dev/SmartLayerWallet/.env
+Environment=NODE_ENV=production
+Environment=PORT=8089
+Environment=BACKEND_PORT=8088
+Environment=SSL_CERT=/etc/letsencrypt/live/wallet.percolate.one/fullchain.pem
+Environment=SSL_KEY=/etc/letsencrypt/live/wallet.percolate.one/privkey.pem
+
+# IMPORTANT: SSL certificate files must be readable by user 'pi'
+# Option 1 - Copy certificates with a certbot deploy hook:
+#   Create /etc/letsencrypt/renewal-hooks/deploy/copy-wallet-certs.sh:
+#     #!/bin/bash
+#     cp /etc/letsencrypt/live/wallet.percolate.one/fullchain.pem /home/pi/dev/SmartLayerWallet/certs/
+#     cp /etc/letsencrypt/live/wallet.percolate.one/privkey.pem /home/pi/dev/SmartLayerWallet/certs/
+#     chown pi:pi /home/pi/dev/SmartLayerWallet/certs/*.pem
+#     chmod 600 /home/pi/dev/SmartLayerWallet/certs/*.pem
+#     systemctl restart smartlayer-wallet-https
+#   Then adjust SSL_CERT and SSL_KEY paths above to /home/pi/dev/SmartLayerWallet/certs/
+#
+# Option 2 - Add user 'pi' to ssl-cert group with ACL:
+#   sudo setfacl -R -m u:pi:rX /etc/letsencrypt/live
+#   sudo setfacl -R -m u:pi:rX /etc/letsencrypt/archive
+#
+# To verify access: sudo -u pi cat /etc/letsencrypt/live/wallet.percolate.one/fullchain.pem
+
+# If using nvm or a custom node path, adjust the ExecStart path below:
+# ExecStart=/home/pi/.nvm/versions/node/v20.x.x/bin/node /home/pi/dev/SmartLayerWallet/server-https.js
+ExecStart=/usr/bin/env node /home/pi/dev/SmartLayerWallet/server-https.js
+
+Restart=always
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smartlayer-wallet-https
+
+[Install]
+WantedBy=multi-user.target
