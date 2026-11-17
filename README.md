@@ -1,4 +1,4 @@
-# wallet.openpasskey.com
+# wallet.percolate.one
 
 Unified passkey-based smart wallet based on the OpenPasskey ecosystem.
 
