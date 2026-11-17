@@ -1,0 +1,16 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls",
+      "delegate_permission/common.get_login_creds"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.openpasskey.wallet",
+      "sha256_cert_fingerprints": [
+        "B7:C0:FB:77:67:5E:44:E4:74:32:EE:C2:0E:02:BD:CB:47:70:CE:B9:BA:BA:6D:C6:03:56:4D:78:5B:63:19:6E",
+        "A3:00:93:D3:5B:BD:6E:C6:FD:58:94:E2:1D:57:41:FA:70:1C:D1:CE:F2:1B:D4:E6:C3:FF:98:08:90:A0:B0:4E" 
+      ]
+    }
+  }
+]
