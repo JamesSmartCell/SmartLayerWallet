@@ -75,7 +75,7 @@ export function useTokenBalances({ isOpen, includeEth = false }: UseTokenBalance
                             rawBalance: reg.balance,
                             networkKey: selectedNetwork,
                             networkName: network.name,
-                            tokenName: hardcodedToken ? hardcodedToken[1].name : 'OpenPassKey Token',
+                            tokenName: hardcodedToken ? hardcodedToken[1].name : 'Token',
                             decimals: hardcodedToken ? hardcodedToken[1].decimals : 18,
                         })
                     }

@@ -101,7 +101,7 @@ export class SmartAccountService {
     })
 
     if (credential.publicKey === '0x') {
-      throw new Error('Credential missing public key - fetch from recovery API first')
+      throw new Error('Credential missing public key - fetch from server API first')
     }
 
     // Create WebAuthn account from passkey credential

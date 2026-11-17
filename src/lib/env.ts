@@ -1,6 +1,6 @@
 /**
- * GarageDoorKey Environment Configuration
- * Re-skinned from OpenPasskey for garage door access control
+ * SmartLayerWallet Environment Configuration
+ * Passkey wallet with garage door and camera integration
  */
 
 import { base, baseSepolia, mainnet, sepolia } from 'viem/chains'
@@ -32,7 +32,7 @@ function getEnvironment(): 'prod' | 'dev' | 'proto' {
   return 'dev'
 }
 
-// Network Key Constants
+// Network configuration
 export const NETWORK_KEYS = {
   BASE: 'BASE',
   MAINNET: 'MAINNET',
@@ -52,31 +52,31 @@ export function parseNetworkKey(net?: string | null): NetworkKey | undefined {
   return undefined
 }
 
-// GarageDoorKey runs on Base Sepolia only
+// Default network: Base Sepolia
 export function getSelectedNetworkKey(): NetworkKey {
   return NETWORK_KEYS.BASE_SEPOLIA
 }
 
 /**
- * GarageDoorKey uses Base Sepolia only
+ * Default network for SmartLayerWallet
  */
 export function getDefaultNetworkKey(): NetworkKey {
   return NETWORK_KEYS.BASE_SEPOLIA
 }
 
 /**
- * GarageDoorKey: Base Sepolia only
+ * Enabled networks for SmartLayerWallet
  */
 export function getEnabledNetworkKeys(): NetworkKey[] {
   return [NETWORK_KEYS.BASE_SEPOLIA]
 }
 
 export const ENV = {
-  // Passkey/WebAuthn with environment-specific rpId for wallet.percolate.one
+  // Passkey/WebAuthn configuration
   RP_ID: getEnvironmentRpId(),
   ENVIRONMENT: getEnvironment(),
 
-  // Garage Door specific config
+  // Garage Door and Camera configuration
   GARAGE_DOOR_NFT_ADDRESS: (process.env.NEXT_PUBLIC_GARAGE_DOOR_NFT_ADDRESS || '0x3158e836ec0e85A46f7a7208d91EA9837A0C6ccC') as `0x${string}`,
   IOT_DEVICE_ADDRESS: process.env.NEXT_PUBLIC_IOT_DEVICE_ADDRESS || '0xb1a6929c36c0ad999806a96dfe718777e650f395',
   // Camera address - never fall back to garage (IOT_DEVICE_ADDRESS); camera needs its own challenge

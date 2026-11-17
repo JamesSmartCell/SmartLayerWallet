@@ -282,7 +282,7 @@ function GarageDoorPageContent() {
             <div className="inline-flex items-center justify-center w-20 h-20 bg-amber-500/20 rounded-2xl mb-4 border border-amber-500/40">
               <DoorOpen className="h-10 w-10 text-amber-400" />
             </div>
-            <h1 className="text-2xl font-bold text-white mb-2">GarageDoorKey</h1>
+            <h1 className="text-2xl font-bold text-white mb-2">SmartLayerWallet</h1>
             <p className="text-slate-400">
               Passkey-powered garage door access on Base Sepolia
             </p>
@@ -355,7 +355,7 @@ function GarageDoorPageContent() {
               </button>
               <div className="flex items-center gap-2">
                 <div>
-                  <h1 className="font-semibold text-white">GarageDoorKey</h1>
+                  <h1 className="font-semibold text-white">SmartLayerWallet</h1>
                   <p className="text-xs text-slate-500 font-mono">
                     {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '—'}
                   </p>

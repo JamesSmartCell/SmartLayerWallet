@@ -81,10 +81,6 @@ function getEnvironmentInfo(): { rpId: string; environment: 'prod' | 'dev' | 'pr
   const rpId = ENV.RP_ID
   if (rpId === 'percolate.one') {
     return { rpId, environment: 'prod' }
-  } else if (rpId === 'opkdev.com') {
-    return { rpId, environment: 'dev' }
-  } else if (rpId === 'opkproto.com') {
-    return { rpId, environment: 'proto' }
   }
   return { rpId, environment: 'local' }
 }

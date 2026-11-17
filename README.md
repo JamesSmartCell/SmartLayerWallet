@@ -473,7 +473,7 @@ smartlayer-wallet/
 │       ├── passkey-real.ts           # WebAuthn service (with MS fixes)
 │       ├── passkey-store.ts          # Server-side SQLite storage
 │       ├── smart-account-real.ts     # ERC-4337 service
-│       ├── recovery-api.ts           # Passkey backend API client
+│       ├── recovery-api.ts           # Passkey server API client
 │       ├── garage-door.ts            # Garage door control
 │       ├── mjpeg-player.ts           # MJPEG streaming
 │       ├── activity.ts               # Transaction history
