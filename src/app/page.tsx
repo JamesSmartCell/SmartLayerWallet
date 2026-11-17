@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button'
 import { Plus, Loader2, DoorOpen, DoorClosed, RefreshCw, Copy, Check, Upload } from 'lucide-react'
 import { LiveCamera } from '@/components/live-camera'
 import { useState, useEffect, useCallback, Suspense } from 'react'
-import { createPublicClient, http } from 'viem'
 import {
   fetchChallenge,
   fetchFirmwareVersion,
@@ -18,7 +17,8 @@ import {
   p256PublicKeyToAddress,
   isGarageAdmin,
 } from '@/lib/garage-door'
-import { ENV, NETWORKS, NETWORK_KEYS } from '@/lib/env'
+import { getWaterfallClient } from '@/lib/rpc'
+import { ENV, NETWORK_KEYS } from '@/lib/env'
 
 function GarageDoorPageContent() {
   const {
@@ -50,6 +50,12 @@ function GarageDoorPageContent() {
   const [otaResult, setOtaResult] = useState<'success' | 'fail' | null>(null)
   const [otaError, setOtaError] = useState<string | null>(null)
   const [otaLog, setOtaLog] = useState<string[]>([])
+  const [client, setClient] = useState<any>(null)
+
+  // Initialize waterfall RPC client
+  useEffect(() => {
+    getWaterfallClient(NETWORK_KEYS.BASE_SEPOLIA).then(setClient)
+  }, [])
 
   const copyToClipboard = useCallback(async (text: string, id: string) => {
     try {
@@ -68,12 +74,6 @@ function GarageDoorPageContent() {
       setTimeout(() => setCopiedAddr(null), 2000)
     }
   }, [])
-
-  const network = NETWORKS[NETWORK_KEYS.BASE_SEPOLIA]
-  const client = createPublicClient({
-    chain: network.chain,
-    transport: http(network.publicRpc || network.chain.rpcUrls.default.http[0]),
-  })
 
   const loadChallenge = useCallback(async () => {
     setChallengeError(null)
@@ -99,11 +99,11 @@ function GarageDoorPageContent() {
   }, [])
 
   const loadBalance = useCallback(async () => {
-    if (!isConnected || !address || !user?.passkeyPublicKey) return
+    if (!isConnected || !address || !user?.passkeyPublicKey || !client) return
     setBalanceError(null)
     try {
       const p256Addr = p256PublicKeyToAddress(user!.passkeyPublicKey)
-      const balance = await fetchGarageNftBalance(p256Addr, client as any)
+      const balance = await fetchGarageNftBalance(p256Addr, client)
       setNftBalance(balance)
     } catch (e) {
       setBalanceError(e instanceof Error ? e.message : 'Failed to fetch balance')

@@ -29,12 +29,18 @@ const certPath = process.env.SSL_CERT || '/etc/letsencrypt/live/wallet.percolate
 const keyPath = process.env.SSL_KEY || '/etc/letsencrypt/live/wallet.percolate.one/privkey.pem';
 
 function proxyRequest(req, res, hostname, port, destPath) {
+  // Set X-Forwarded-For from actual remote address (overwrite any client-supplied value)
+  const remoteAddr = req.socket.remoteAddress || 'unknown';
+  const headers = { ...req.headers, host: hostname + ':' + port };
+  headers['x-forwarded-for'] = remoteAddr;
+  headers['x-real-ip'] = remoteAddr;
+  
   const opts = {
     hostname,
     port,
     path: destPath,
     method: req.method,
-    headers: { ...req.headers, host: hostname + ':' + port },
+    headers,
   };
   const isLive = String(destPath).startsWith('/live');
   const proxy = http.request(opts, (proxyRes) => {

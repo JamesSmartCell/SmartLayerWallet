@@ -104,19 +104,29 @@ Copy `.env.example` to `.env` and fill in your values:
 cp .env.example .env
 ```
 
-Required variables:
+### Server-Side Environment Variables
 
-- `NEXT_PUBLIC_CDP_API_KEY`: Coinbase CDP API key (get from [Coinbase Developer Platform](https://portal.cdp.coinbase.com/))
+**Required**:
+- `CDP_API_KEY`: Coinbase CDP API key for ERC-4337 bundler/paymaster (get from [Coinbase Developer Platform](https://portal.cdp.coinbase.com/))
+  - **Server-side only** - never exposed to client
+  - Proxied via `/api/bundler/[chainId]` route
+
+**Optional**:
 - `WALLET_DB_PATH`: Path to SQLite database (defaults to `./data/wallet.db`)
+- `WALLET_ALLOWED_ORIGINS`: Comma-separated allowed WebAuthn origins (defaults to `https://<rpId>` and localhost)
+- `CUSTOM_RPC_URL_<CHAIN_ID>`: Custom RPC URL per chain (e.g. `CUSTOM_RPC_URL_84532` for Base Sepolia)
+- `CDP_BUNDLER_URL_<CHAIN_ID>`: Custom bundler URL per chain (overrides default Coinbase endpoints)
 
-Optional variables:
+### Client-Side Environment Variables
 
+**Optional**:
 - `NEXT_PUBLIC_RP_ID`: WebAuthn Relying Party ID (auto-detected from hostname)
 - `NEXT_PUBLIC_GARAGE_DOOR_NFT_ADDRESS`: Garage door NFT contract address
 - `NEXT_PUBLIC_IOT_DEVICE_ADDRESS`: Garage door ESP32 device address
 - `NEXT_PUBLIC_IOT_CAMERA_ADDRESS`: Camera ESP32 device address
 - `NEXT_PUBLIC_GARAGE_API_BASE`: SmartLayerProxy base URL
 - `NEXT_PUBLIC_GARAGE_ADMIN_ADDRESSES`: Comma-separated admin addresses
+- `NEXT_PUBLIC_CAMERA_GATE_URL`: Camera gate path (defaults to `/cam-gate`)
 
 ### Database Initialization
 
@@ -164,6 +174,24 @@ The HTTPS proxy:
 - Serves Next.js on port 8089 (configurable via `PORT`)
 - Proxies `/cam-gate/*` to Raspberry Pi camera (default: `http://127.0.0.1:8787`)
 - Allows unlimited streaming timeouts for camera feeds
+
+### RPC Configuration
+
+SmartLayerWallet uses **@smarttokenlabs/waterfall-rpc** for all read-only blockchain access:
+- Automatic fallback between RPC providers
+- Web-based caching for faster reads
+- Connection pooling
+
+The wallet creates cached waterfall clients per chain in `src/lib/rpc.ts`. Custom RPC URLs can be provided via `CUSTOM_RPC_URL_<CHAIN_ID>` env vars.
+
+### Bundler/Paymaster Proxy
+
+The CDP API key is kept server-side. Client requests go through `/api/bundler/[chainId]` which:
+- Allowlists only ERC-4337 and paymaster methods
+- Rate limits per IP (30 req/min)
+- Proxies to Coinbase CDP bundler endpoints
+
+Allowlisted methods: `eth_sendUserOperation`, `eth_estimateUserOperationGas`, `eth_getUserOperationReceipt`, `eth_getUserOperationByHash`, `eth_supportedEntryPoints`, `eth_chainId`, `pm_*`
 
 ## API Routes
 

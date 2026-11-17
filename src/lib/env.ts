@@ -76,9 +76,6 @@ export const ENV = {
   RP_ID: getEnvironmentRpId(),
   ENVIRONMENT: getEnvironment(),
 
-  // Client key used by OnchainKit or direct RPC calls
-  CDP_API_KEY: process.env.NEXT_PUBLIC_CDP_API_KEY || '',
-
   // Garage Door specific config
   GARAGE_DOOR_NFT_ADDRESS: (process.env.NEXT_PUBLIC_GARAGE_DOOR_NFT_ADDRESS || '0x3158e836ec0e85A46f7a7208d91EA9837A0C6ccC') as `0x${string}`,
   IOT_DEVICE_ADDRESS: process.env.NEXT_PUBLIC_IOT_DEVICE_ADDRESS || '0xb1a6929c36c0ad999806a96dfe718777e650f395',
@@ -102,8 +99,6 @@ export const ENV = {
     // Coinbase Account Factory (all EVM)
     ACCOUNT_FACTORY: process.env.NEXT_PUBLIC_ACCOUNT_FACTORY as `0x${string}` || '0x0BA5ED0c6AA8c49038F819E587E2633c4A9F428a',
   },
-
-  COINBASE_CLIENT_API_KEY: process.env.NEXT_PUBLIC_COINBASE_CLIENT_API_KEY || 'QDqpZt4prDdITV2NZEfeeRgWd84BiWOC',
 } as const
 
 // Network configurations
@@ -111,9 +106,9 @@ export const NETWORKS = {
   [NETWORK_KEYS.MAINNET]: {
     id: 1,
     name: 'Ethereum',
-    // https://docs.pimlico.io/guides/supported-chains
-    bundlerUrl: process.env.NEXT_PUBLIC_BUNDLER_MAINNET || `https://public.pimlico.io/v2/1/rpc`,
-    publicRpc: process.env.NEXT_PUBLIC_NODE_RPC_MAINNET || `https://ethereum-rpc.publicnode.com`,
+    // Bundler URL is now client-side proxy: /api/bundler/1
+    bundlerUrl: '/api/bundler/1',
+    publicRpc: null, // Use waterfall RPC via src/lib/rpc.ts
     paymaster: false,
     chain: mainnet,
     tokens: {
@@ -146,8 +141,8 @@ export const NETWORKS = {
   [NETWORK_KEYS.BASE]: {
     id: 8453,
     name: 'Base',
-    bundlerUrl: process.env.NEXT_PUBLIC_PAYMASTER_AND_BUNDLER_BASE || `https://api.developer.coinbase.com/rpc/v1/base/${ENV.COINBASE_CLIENT_API_KEY}`,
-    publicRpc: process.env.NEXT_PUBLIC_NODE_RPC_BASE || `https://mainnet.base.org`,
+    bundlerUrl: '/api/bundler/8453',
+    publicRpc: null, // Use waterfall RPC via src/lib/rpc.ts
     paymaster: true,
     chain: base,
     tokens: {
@@ -174,8 +169,8 @@ export const NETWORKS = {
   [NETWORK_KEYS.BASE_SEPOLIA]: {
     id: 84532,
     name: 'Base Sepolia',
-    bundlerUrl: process.env.NEXT_PUBLIC_PAYMASTER_AND_BUNDLER_BASE_SEPOLIA || `https://api.developer.coinbase.com/rpc/v1/base-sepolia/${ENV.COINBASE_CLIENT_API_KEY}`,
-    publicRpc: process.env.NEXT_PUBLIC_NODE_RPC_BASE_SEPOLIA || `https://sepolia.base.org`,
+    bundlerUrl: '/api/bundler/84532',
+    publicRpc: null, // Use waterfall RPC via src/lib/rpc.ts
     paymaster: true,
     chain: baseSepolia,
     tokens: {
@@ -196,9 +191,8 @@ export const NETWORKS = {
   [NETWORK_KEYS.SEPOLIA]: {
     id: 11155111,
     name: 'Sepolia',
-    // https://docs.pimlico.io/guides/supported-chains
-    bundlerUrl: process.env.NEXT_PUBLIC_BUNDLER_SEPOLIA || `https://public.pimlico.io/v2/11155111/rpc`,
-    publicRpc: process.env.NEXT_PUBLIC_NODE_RPC_SEPOLIA || `https://ethereum-sepolia-rpc.publicnode.com`,
+    bundlerUrl: '/api/bundler/11155111',
+    publicRpc: null, // Use waterfall RPC via src/lib/rpc.ts
     paymaster: false,
     chain: sepolia,
     tokens: {
@@ -225,8 +219,8 @@ export function getEndpointsForNetwork(networkKey: NetworkKey) {
   const network = NETWORKS[networkKey]
 
   return {
-    bundlerUrl: network.bundlerUrl,
-    publicRpc: network.publicRpc,
+    bundlerUrl: network.bundlerUrl, // Now points to /api/bundler/[chainId]
+    publicRpc: network.publicRpc,   // null - use getWaterfallClient from rpc.ts
     paymaster: network.paymaster,
     chainId: network.id,
     chainName: network.name,
@@ -235,15 +229,16 @@ export function getEndpointsForNetwork(networkKey: NetworkKey) {
   }
 }
 
-// Validation function
+// Validation function (server-side only)
 export function validateEnv(): void {
-  const required = ['CDP_API_KEY']
-  const missing = required.filter(key => !ENV[key as keyof typeof ENV])
-
-  if (missing.length > 0) {
-    console.warn('Missing required environment variables:', missing.join(', '))
-    console.warn('Some features may not work properly. See README for setup instructions.')
-    // Don't throw during build - env vars are loaded at runtime
+  // CDP_API_KEY is server-side only, checked in bundler route
+  // No client-side env validation needed
+  if (typeof window === 'undefined') {
+    const cdpKey = process.env.CDP_API_KEY || process.env.CDP_BUNDLER_API_KEY
+    if (!cdpKey) {
+      console.warn('Missing required environment variable: CDP_API_KEY')
+      console.warn('ERC-4337 bundler/paymaster will not work. See README for setup instructions.')
+    }
   }
 }
 

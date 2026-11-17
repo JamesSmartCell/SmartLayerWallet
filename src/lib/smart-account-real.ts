@@ -6,7 +6,6 @@
  */
 
 import {
-  createPublicClient,
   http,
   Hex,
   Address,
@@ -20,6 +19,7 @@ import {
 } from 'viem/account-abstraction'
 import { verify } from 'webauthn-p256'
 import { ENV, getEndpointsForNetwork, getDefaultNetworkKey, type NetworkKey } from './env'
+import { getWaterfallClient } from './rpc'
 import type { PasskeyCredential } from './passkey-real'
 
 export interface UserOperationCall {
@@ -38,15 +38,24 @@ export class SmartAccountService {
     this.currentNetworkKey = networkKey || getDefaultNetworkKey()
     this.endpoints = getEndpointsForNetwork(this.currentNetworkKey)
     this.chain = this.endpoints.chain
-    this.publicClient = createPublicClient({
-      chain: this.chain,
-      transport: http(this.endpoints.publicRpc || this.endpoints.chain.rpcUrls.default.http[0]),
-    })
+    
+    // Initialize with waterfall RPC (async init deferred to first use)
+    this.publicClient = null
 
     console.log('🏦 SmartAccountService initialized:', {
       network: this.endpoints.chainName,
       chainId: this.endpoints.chainId,
     })
+  }
+
+  /**
+   * Get or create the waterfall public client
+   */
+  private async getPublicClient() {
+    if (!this.publicClient) {
+      this.publicClient = await getWaterfallClient(this.currentNetworkKey)
+    }
+    return this.publicClient
   }
 
   /**
@@ -60,10 +69,7 @@ export class SmartAccountService {
     this.currentNetworkKey = networkKey
     this.endpoints = getEndpointsForNetwork(networkKey)
     this.chain = this.endpoints.chain
-    this.publicClient = createPublicClient({
-      chain: this.chain,
-      transport: http(this.endpoints.publicRpc || this.endpoints.chain.rpcUrls.default.http[0]),
-    })
+    this.publicClient = null // Reset client, will be re-created on next use
 
     console.log('🌐 SmartAccountService network switched:', {
       network: this.endpoints.chainName,
@@ -109,9 +115,10 @@ export class SmartAccountService {
     })
 
     // Create Coinbase Smart Account with WebAuthn owner - EXACT pattern from real code
+    const publicClient = await this.getPublicClient()
     const account = await toCoinbaseSmartAccount({
       owners: [webAuthnAccount],
-      client: this.publicClient,
+      client: publicClient,
       version: '1.1', // Align with mini-app derivation
     })
 
@@ -136,7 +143,8 @@ export class SmartAccountService {
    */
   async isAccountDeployed(address: Address): Promise<boolean> {
     try {
-      const code = await this.publicClient.getBytecode({ address })
+      const publicClient = await this.getPublicClient()
+      const code = await publicClient.getBytecode({ address })
       return code !== undefined && code !== '0x'
     } catch (error) {
       console.error('Failed to check account deployment:', error)
@@ -147,9 +155,10 @@ export class SmartAccountService {
   /**
    * Create bundler client for UserOperation submission - EXACT pattern from real implementation
    */
-  private createBundlerClient(account: SmartAccount) {
+  private async createBundlerClient(account: SmartAccount) {
+    const publicClient = await this.getPublicClient()
     return createBundlerClient({
-      client: this.publicClient,
+      client: publicClient,
       chain: this.chain,
       account,
       transport: http(this.endpoints.bundlerUrl),
@@ -179,15 +188,15 @@ export class SmartAccountService {
     // Create smart account
     const account = await this.createSmartAccount(credential)
     console.log('Smart account created:', account)
-    const bundlerClient = this.createBundlerClient(account)
-    console.log('Bundler client created:', bundlerClient)
+    const bundlerClientInstance = await this.createBundlerClient(account)
+    console.log('Bundler client created:', bundlerClientInstance)
     const paymasterEnabled = this.endpoints.paymaster
 
     let userOpHash: Hex
     if (paymasterEnabled) {
       try {
         console.log(`🚀 Attempting sponsored transaction on ${this.currentNetworkKey}...`)
-        userOpHash = await bundlerClient.sendUserOperation({
+        userOpHash = await bundlerClientInstance.sendUserOperation({
           calls: calls.map(call => ({
             to: call.to,
             value: call.value,
@@ -197,7 +206,7 @@ export class SmartAccountService {
         })
       } catch (err) {
         console.warn(`⚠️ Sponsored transaction failed on ${this.currentNetworkKey}, falling back to user-pays:`, err)
-        userOpHash = await bundlerClient.sendUserOperation({
+        userOpHash = await bundlerClientInstance.sendUserOperation({
           calls: calls.map(call => ({
             to: call.to,
             value: call.value,
@@ -207,7 +216,7 @@ export class SmartAccountService {
       }
     } else {
       console.log(`🚀 Attempting user-pays transaction on ${this.currentNetworkKey}...`, calls)
-      userOpHash = await bundlerClient.sendUserOperation({
+      userOpHash = await bundlerClientInstance.sendUserOperation({
         calls: calls.map(call => ({
           to: call.to,
           value: call.value,
@@ -221,7 +230,7 @@ export class SmartAccountService {
       account: account.address,
     })
 
-    const receipt = await bundlerClient.waitForUserOperationReceipt({
+    const receipt = await bundlerClientInstance.waitForUserOperationReceipt({
       hash: userOpHash,
     })
 
@@ -278,7 +287,8 @@ export class SmartAccountService {
    */
   async getBalance(address: Address): Promise<bigint> {
     try {
-      return await this.publicClient.getBalance({ address })
+      const publicClient = await this.getPublicClient()
+      return await publicClient.getBalance({ address })
     } catch (error) {
       console.error('Failed to get balance:', error)
       return 0n
@@ -300,7 +310,8 @@ export class SmartAccountService {
   }> {
     try {
       // This would use bundler's estimation methods
-      const fees = await this.publicClient.estimateFeesPerGas()
+      const publicClient = await this.getPublicClient()
+      const fees = await publicClient.estimateFeesPerGas()
 
       // Rough estimates - real implementation would use bundler estimation
       return {
@@ -434,9 +445,9 @@ export class SmartAccountService {
       args: [ownerAddress],
     })
 
-    const bundlerClient = this.createBundlerClient(account)
+    const bundlerClientInstance = await this.createBundlerClient(account)
 
-    const userOpHash = await bundlerClient.sendUserOperation({
+    const userOpHash = await bundlerClientInstance.sendUserOperation({
       calls: [{
         to: account.address,
         data,
@@ -445,7 +456,7 @@ export class SmartAccountService {
 
     console.log('📤 addOwnerAddress UserOp submitted:', userOpHash)
 
-    const receipt = await bundlerClient.waitForUserOperationReceipt({
+    const receipt = await bundlerClientInstance.waitForUserOperationReceipt({
       hash: userOpHash,
     })
 
