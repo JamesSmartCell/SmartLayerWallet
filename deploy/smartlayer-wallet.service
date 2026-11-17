@@ -10,8 +10,17 @@ EnvironmentFile=/home/pi/dev/SmartLayerWallet/.env
 Environment=NODE_ENV=production
 Environment=PORT=8088
 
-# If using nvm or a custom node path, adjust the ExecStart path below:
-# ExecStart=/home/pi/.nvm/versions/node/v20.x.x/bin/node /home/pi/dev/SmartLayerWallet/start-server.js
+# IMPORTANT: If using nvm, systemd cannot find node via /usr/bin/env node
+# You MUST use the absolute path to the node binary:
+# 1. Find your node path: which node  (e.g. /home/pi/.nvm/versions/node/v24.11.0/bin/node)
+# 2. Replace ExecStart below with that absolute path
+# Example for nvm node v24.11.0:
+#   ExecStart=/home/pi/.nvm/versions/node/v24.11.0/bin/node /home/pi/dev/SmartLayerWallet/start-server.js
+
+# WARNING: EnvironmentFile does NOT strip inline # comments
+# Your .env must have NO inline comments like: SOME_VAR=value # comment
+# Put comments on separate lines only
+
 ExecStart=/usr/bin/env node /home/pi/dev/SmartLayerWallet/start-server.js
 
 Restart=always

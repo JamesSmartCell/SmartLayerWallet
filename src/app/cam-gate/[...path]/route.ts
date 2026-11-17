@@ -3,7 +3,7 @@ import { type NextRequest } from 'next/server'
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const UPSTREAM = (process.env.CAMERA_GATE_UPSTREAM || 'http://127.0.0.1:8787').replace(/\/$/, '')
+const UPSTREAM = (process.env.CAMERA_GATE_UPSTREAM || 'http://192.168.50.224:8787').replace(/\/$/, '')
 
 const ALLOWED = /^(health|challenge|auth|heartbeat|stop|live\/|hls\/|snapshot\/)/
 
@@ -35,7 +35,7 @@ async function proxy(req: NextRequest, path: string[]) {
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     return new Response(
-      `camera-gate unreachable at ${UPSTREAM} (${message}). On the Pi 5: curl ${UPSTREAM}/health`,
+      `camera-gate unreachable at ${UPSTREAM} (${message}). Check CAMERA_GATE_UPSTREAM env var and verify camera is accessible on LAN.`,
       { status: 502, headers: { 'Content-Type': 'text/plain' } }
     )
   }

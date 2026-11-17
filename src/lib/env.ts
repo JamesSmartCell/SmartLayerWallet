@@ -81,8 +81,8 @@ export const ENV = {
   IOT_DEVICE_ADDRESS: process.env.NEXT_PUBLIC_IOT_DEVICE_ADDRESS || '0xb1a6929c36c0ad999806a96dfe718777e650f395',
   // Camera address - never fall back to garage (IOT_DEVICE_ADDRESS); camera needs its own challenge
   IOT_CAMERA_ADDRESS: (process.env.NEXT_PUBLIC_IOT_CAMERA_ADDRESS || '0x38Ba3A68D4460Cf4747A0303D8e2C106cFF68F3f') as `0x${string}`,
-  GARAGE_API_BASE: process.env.NEXT_PUBLIC_GARAGE_API_BASE || 'https://proxy.percolate.one/api',
-  // Same-origin path on wallet.percolate.one (reuses that cert). server-https.js proxies to the Pi.
+  GARAGE_API_BASE: process.env.NEXT_PUBLIC_GARAGE_API_BASE || 'https://scriptproxy.percolate.one/api',
+  // Same-origin path on wallet.percolate.one served via Next.js cam-gate route
   CAMERA_GATE_URL: (process.env.NEXT_PUBLIC_CAMERA_GATE_URL || '/cam-gate').replace(/\/$/, ''),
   GARAGE_ADMIN_ADDRESSES: (
     process.env.NEXT_PUBLIC_GARAGE_ADMIN_ADDRESSES ||

@@ -1,6 +1,9 @@
 /**
- * HTTPS reverse proxy for Next.js Wallet
- * Use when traffic arrives as TLS (e.g. Cloudflare passthrough, direct HTTPS)
+ * OPTIONAL: HTTPS reverse proxy for Next.js Wallet
+ * 
+ * NOT USED IN PRODUCTION - wallet.percolate.one uses Caddy on Linode with SSH tunnel
+ * 
+ * This is for standalone/dev deployments when you need local TLS termination.
  *
  * Usage:
  *   SSL_KEY=/path/to/key.pem SSL_CERT=/path/to/cert.pem node server-https.js
@@ -9,7 +12,7 @@
  *   node server-https.js
  *
  * Proxies HTTPS on PORT (default 8089) -> HTTP localhost:8088 (Next.js)
- * /cam-gate/* -> CAMERA_GATE_UPSTREAM (Pi via SSH reverse tunnel, default 127.0.0.1:8787)
+ * /cam-gate/* -> CAMERA_GATE_UPSTREAM (camera on LAN, default 192.168.50.224:8787)
  *
  * Run Next.js on 8088: PORT=8088 npm start
  */
@@ -21,7 +24,7 @@ const fs = require('fs');
 const PORT = parseInt(process.env.PORT || '8089', 10);
 const BACKEND_PORT = parseInt(process.env.BACKEND_PORT || '8088', 10);
 const BACKEND_HOST = process.env.BACKEND_HOST || '127.0.0.1';
-const CAMERA_GATE_UPSTREAM = process.env.CAMERA_GATE_UPSTREAM || 'http://127.0.0.1:8787';
+const CAMERA_GATE_UPSTREAM = process.env.CAMERA_GATE_UPSTREAM || 'http://192.168.50.224:8787';
 const CAM_PREFIX = '/cam-gate';
 const CAM_ALLOWED = /^\/cam-gate\/(health|challenge|auth|heartbeat|stop|live\/|hls\/|snapshot\/)/;
 
@@ -62,7 +65,7 @@ function proxyRequest(req, res, hostname, port, destPath) {
       res.writeHead(502, { 'Content-Type': 'text/plain' });
       res.end(
         destPath.startsWith('/live') || destPath.startsWith('/hls') || destPath.startsWith('/auth') || destPath.startsWith('/challenge') || destPath.startsWith('/health')
-          ? `camera-gate unreachable at ${CAMERA_GATE_UPSTREAM} (${e.message}). On the Pi 5: curl ${CAMERA_GATE_UPSTREAM}/health — if that fails, the Pi 3 SSH tunnel is down.`
+          ? `camera-gate unreachable at ${CAMERA_GATE_UPSTREAM} (${e.message}). Check CAMERA_GATE_UPSTREAM env var and verify camera is accessible on LAN.`
           : 'Bad Gateway'
       );
     } else {
