@@ -1,6 +1,6 @@
 # wallet.openpasskey.com
 
-Unified passkey-based smart wallet for the OpenPasskey ecosystem.
+Unified passkey-based smart wallet based on the OpenPasskey ecosystem.
 
 ## Overview
 
