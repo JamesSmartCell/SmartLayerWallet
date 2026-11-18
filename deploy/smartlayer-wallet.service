@@ -8,7 +8,7 @@ User=pi
 WorkingDirectory=/home/pi/dev/SmartLayerWallet
 EnvironmentFile=/home/pi/dev/SmartLayerWallet/.env
 Environment=NODE_ENV=production
-Environment=PORT=8088
+Environment=PORT=8089
 
 # IMPORTANT: If using nvm, systemd cannot find node via /usr/bin/env node
 # You MUST use the absolute path to the node binary:

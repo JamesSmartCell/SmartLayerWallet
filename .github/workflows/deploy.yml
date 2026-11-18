@@ -27,7 +27,7 @@ jobs:
           for i in {1..10}; do
             sleep 3
             if systemctl is-active --quiet smartlayer-wallet && \
-               curl -fsS http://127.0.0.1:8088/ > /dev/null 2>&1; then
+               curl -fsS http://127.0.0.1:8089/ > /dev/null 2>&1; then
               echo "✓ Service is healthy"
               exit 0
             fi
