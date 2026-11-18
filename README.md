@@ -447,26 +447,43 @@ npm run test:watch # Watch mode
 SmartLayerWallet auto-deploys to a Raspberry Pi at `https://wallet.percolate.one` via GitHub Actions.
 
 **Architecture:**
-- Next.js backend: `http://127.0.0.1:8088`
-- HTTPS proxy: `https://wallet.percolate.one:8089` (or port 443)
-- Services: `smartlayer-wallet` + `smartlayer-wallet-https`
-- Database: `./data/wallet.db` (SQLite passkeys, gitignored)
+- **Caddy on Linode**: Terminates TLS (auto-managed via Let's Encrypt)
+- **SSH reverse tunnel**: Linode port 9011 → Pi 127.0.0.1:8088
+- **Next.js on Pi**: Listens on 127.0.0.1:8088 (no TLS)
+- **Camera**: Accessed on LAN at 192.168.50.224:8787 via Next.js `/cam-gate` route
+- **Service**: `smartlayer-wallet` (single systemd unit)
+- **Database**: `./data/wallet.db` (SQLite passkeys, gitignored)
+
+**Caddyfile (on Linode):**
+```
+wallet.percolate.one {
+    reverse_proxy 127.0.0.1:9011
+    request_body {
+        max_size 10MB
+    }
+}
+```
+
+**SSH tunnel (on Pi):**
+```bash
+ssh -R 9011:127.0.0.1:8088 linode-wallet-tunnel
+```
 
 **Auto-deploy workflow:**
 - Push to `main` triggers deployment on self-hosted Pi runner
-- Runs: `git pull`, `npm ci`, `npm test`, `npm run build`, restart services
-- Health check: waits for services to be active and responding
+- Runs: `git pull`, `npm ci`, `npm test`, `npm run build`, restart service
+- Health check: waits for service to be active and responding on 127.0.0.1:8088
 
 **One-time Pi setup:**
 
 1. Clone repo to `/home/pi/dev/SmartLayerWallet`
-2. Create `.env` from `.env.example` with production values
+2. Create `.env` from `.env.example` with production values (including `CAMERA_GATE_UPSTREAM`)
 3. Install dependencies: `npm ci && npm run build`
-4. Set up SSL certificates with certbot for `wallet.percolate.one`
-5. Install systemd services from `deploy/` directory
-6. Configure passwordless sudo for service restarts
+4. Set up SSH reverse tunnel to Linode (systemd service)
+5. Install `smartlayer-wallet` systemd service
+6. Configure passwordless sudo for service restart
 7. Set up GitHub Actions self-hosted runner with `smartlayer` label
-8. Ensure port 8089 (or 443) is accessible externally
+8. Configure Caddy on Linode with reverse_proxy to 127.0.0.1:9011
 
 **Detailed setup guide:** See [`deploy/README.md`](deploy/README.md) for complete step-by-step instructions.
 
@@ -477,7 +494,7 @@ SmartLayerWallet auto-deploys to a Raspberry Pi at `https://wallet.percolate.one
 ```bash
 # View service logs
 sudo journalctl -u smartlayer-wallet -f
-sudo journalctl -u smartlayer-wallet-https -f
+sudo journalctl -u ssh-tunnel-wallet -f
 ```
 
 ## Project Structure
