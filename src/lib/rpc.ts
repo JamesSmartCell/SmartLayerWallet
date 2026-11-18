@@ -17,12 +17,13 @@ import type { Chain } from 'viem'
 import { NETWORKS, type NetworkKey, NETWORK_KEYS } from './env'
 
 const clientCache = new Map<number, Promise<any>>()
-const isProd = process.env.NODE_ENV === 'production'
+const isProd = typeof process !== 'undefined' && process.env?.NODE_ENV === 'production'
+const isServer = typeof window === 'undefined'
 
 /**
- * Silence waterfall progress output in production
+ * Silence waterfall progress output in production (server-side only)
  */
-if (isProd && typeof process !== 'undefined') {
+if (isServer && isProd && typeof process !== 'undefined' && process.stdout && process.stderr) {
   const originalStdoutWrite = process.stdout.write.bind(process.stdout)
   const originalStderrWrite = process.stderr.write.bind(process.stderr)
   
@@ -54,9 +55,9 @@ export async function getWaterfallClient(networkKey: NetworkKey): Promise<any> {
   
   if (!clientCache.has(chainId)) {
     const promise = (async () => {
-      // Check for custom RPC override
+      // Check for custom RPC override (server-side only)
       const customRpcKey = `CUSTOM_RPC_URL_${chainId}`
-      const customRpc = process.env[customRpcKey]
+      const customRpc = isServer && typeof process !== 'undefined' ? process.env[customRpcKey] : undefined
       
       if (customRpc) {
         console.log(`[RPC] Using custom RPC for ${network.name} (chainId ${chainId}): ${customRpc}`)
