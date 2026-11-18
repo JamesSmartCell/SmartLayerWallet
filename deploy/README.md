@@ -9,8 +9,8 @@ This guide covers deploying SmartLayerWallet to a Raspberry Pi with auto-deploy 
 - **Repository path**: `/home/pi/dev/SmartLayerWallet`
 - **User**: `pi`
 - **Public URL**: https://wallet.percolate.one (Caddy on Linode with auto-TLS)
-- **SSH tunnel**: Linode port 9011 → Pi 127.0.0.1:8088
-- **Next.js**: Listens on 127.0.0.1:8088 (no TLS)
+- **SSH tunnel**: Linode port 9011 → Pi 127.0.0.1:8089
+- **Next.js**: Listens on 127.0.0.1:8089 (no TLS)
 - **Camera**: Accessed on LAN at 192.168.50.224:8787 via Next.js `/cam-gate` route
 - **Service**: `smartlayer-wallet` (single systemd unit, no HTTPS service)
 - **Database**: `./data/wallet.db` (SQLite passkeys, gitignored, survives deploys)
@@ -109,7 +109,7 @@ npm run build
 
 ### 6. Set Up SSH Reverse Tunnel
 
-The SSH reverse tunnel forwards Linode port 9011 to the Pi's Next.js on 127.0.0.1:8088.
+The SSH reverse tunnel forwards Linode port 9011 to the Pi's Next.js on 127.0.0.1:8089.
 
 #### Create SSH Config
 
@@ -129,7 +129,7 @@ Host linode-wallet-tunnel
     IdentityFile ~/.ssh/id_rsa
     ServerAliveInterval 60
     ServerAliveCountMax 3
-    RemoteForward 9011 127.0.0.1:8088
+    RemoteForward 9011 127.0.0.1:8089
 ```
 
 Replace `<your-linode-ip>` and `<your-linode-user>` with actual values.
@@ -219,7 +219,7 @@ sudo systemctl status smartlayer-wallet
 Verify Next.js is running:
 
 ```bash
-curl http://127.0.0.1:8088/
+curl http://127.0.0.1:8089/
 # Should return HTML
 ```
 
@@ -334,7 +334,7 @@ The workflow will:
 3. Run tests (`npm test` = vitest)
 4. Build the app (`npm run build`)
 5. Restart the service
-6. Health check: wait up to 30s for service to be active and responding on 127.0.0.1:8088
+6. Health check: wait up to 30s for service to be active and responding on 127.0.0.1:8089
 
 ## Architecture Diagram
 
@@ -348,14 +348,14 @@ The workflow will:
                     │
             ┌───────▼─────────────────────────┐
             │   SSH Reverse Tunnel            │
-            │   -R 9011:127.0.0.1:8088        │
+            │   -R 9011:127.0.0.1:8089        │
             │   (Pi → Linode)                 │
             └───────┬─────────────────────────┘
                     │
     ┌───────────────▼───────────────┐
     │   Raspberry Pi 5              │
     │   smartlayer-wallet service   │
-    │   Next.js on 127.0.0.1:8088   │
+    │   Next.js on 127.0.0.1:8089   │
     └───────────────┬───────────────┘
                     │
                     │ proxies /cam-gate/* to
@@ -449,7 +449,7 @@ ssh -v -N linode-wallet-tunnel
 
 ```bash
 # On Pi: Check service is running
-curl http://127.0.0.1:8088/
+curl http://127.0.0.1:8089/
 
 # On Linode: Check tunnel endpoint
 curl http://127.0.0.1:9011/
@@ -551,8 +551,8 @@ sudo certbot certonly --standalone -d wallet.percolate.one
 # Set environment variables
 export SSL_CERT=/etc/letsencrypt/live/wallet.percolate.one/fullchain.pem
 export SSL_KEY=/etc/letsencrypt/live/wallet.percolate.one/privkey.pem
-export PORT=8089
-export BACKEND_PORT=8088
+export PORT=8443
+export BACKEND_PORT=8089
 
 # Run HTTPS proxy
 npm run start:https
