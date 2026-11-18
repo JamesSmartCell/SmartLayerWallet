@@ -226,6 +226,7 @@ export class PasskeyService {
       webauthn: {
         authenticatorData: assertion.response.authenticatorData,
         clientDataJSON: assertion.response.clientDataJSON,
+        userHandle: assertion.response.userHandle, // May be null/undefined
       },
     }
   }

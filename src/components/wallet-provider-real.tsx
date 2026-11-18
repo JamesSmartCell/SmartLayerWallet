@@ -279,12 +279,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         }
         
         // Cryptographic recovery path: no localStorage or migration failed
-        // NOTE: Public key recovery is EXPERIMENTAL and may not work reliably yet
-        // See RECOVERY_STATUS.md for details
         if (vc.publicKey === '0x') {
-          console.log('🔐 No server record and no localStorage. Attempting public key recovery...')
+          console.log('🔐 No server record and no localStorage. Starting public key recovery...')
           console.log('   This uses two separate passkey verifications to cryptographically recover your public key.')
-          console.log('   NOTE: This feature is experimental. If it fails, you will need to re-register.')
           
           // Get second challenge
           let challenge2: Hex
@@ -304,12 +301,23 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             throw new Error('Missing signature data for recovery')
           }
           
-          // Call recovery endpoint (EXPERIMENTAL)
+          // Extract userHandle from assertion if available (decode from base64url)
+          let userHandle = 'recovered-user'
+          try {
+            if (result.webauthn.userHandle) {
+              const userHandleBytes = Uint8Array.from(atob(result.webauthn.userHandle.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0))
+              userHandle = new TextDecoder().decode(userHandleBytes)
+            }
+          } catch (error) {
+            console.warn('Could not decode userHandle from assertion, using default')
+          }
+          
+          // Call recovery endpoint
           try {
             const recoveryResult = await backendService.recoverPasskey({
               credentialId: vc.id,
               rpId: state.rpId,
-              userHandle: 'recovered-user',
+              userHandle,
               assertion1: {
                 challenge,
                 authenticatorData: result.webauthn.authenticatorData,
@@ -330,11 +338,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
             vc = {
               id: vc.id,
               rpId: vc.rpId,
-              username: 'recovered-user',
+              username: userHandle,
               publicKey: recoveryResult.publicKey,
             }
           } catch (recoveryError: any) {
-            console.error('❌ Public key recovery failed (experimental feature):', recoveryError)
+            console.error('❌ Public key recovery failed:', recoveryError)
             throw new Error(`Passkey not found. Please re-register your passkey. (Recovery failed: ${recoveryError.message})`)
           }
         }
