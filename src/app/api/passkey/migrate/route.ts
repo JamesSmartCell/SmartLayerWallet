@@ -18,11 +18,13 @@
  * }
  * 
  * Verification:
- * 1. Verifies P-256 signature against supplied publicKey
- * 2. Checks rpId, origin, challenge in clientData
- * 3. Validates challenge against stored challenge
- * 4. Stores passkey if verification succeeds
- * 5. Refuses to overwrite existing different records
+ * 1. Validates rpId against server-configured NEXT_PUBLIC_RP_ID
+ * 2. Verifies P-256 signature against supplied publicKey
+ * 3. Checks rpId, origin (WALLET_ALLOWED_ORIGINS), challenge in clientData
+ * 4. Verifies authenticatorData rpIdHash, UP, and UV flags
+ * 5. Validates challenge against stored unused challenge
+ * 6. Stores passkey if verification succeeds and marks challenge used
+ * 7. Refuses to overwrite existing different records
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -30,7 +32,9 @@ import { PasskeyStore } from '@/lib/passkey-store'
 import { Hex } from 'viem'
 import {
   parseClientDataJSON,
+  parseAuthenticatorData,
   verifyClientData,
+  verifyAuthenticatorData,
   verifySignature,
 } from '@/lib/webauthn-verifier'
 
@@ -44,6 +48,10 @@ interface MigrateRequest {
   authenticatorData: string
   clientDataJSON: string
   signature: string
+}
+
+function getConfiguredRpId(): string {
+  return process.env.NEXT_PUBLIC_RP_ID || 'localhost'
 }
 
 export async function POST(request: NextRequest) {
@@ -71,6 +79,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate rpId against server configuration (do not trust client)
+    const configuredRpId = getConfiguredRpId()
+    if (body.rpId !== configuredRpId) {
+      return NextResponse.json(
+        { error: 'Invalid RP ID' },
+        { status: 400 }
+      )
+    }
+
     // Check if credential already exists - prevent overwrite of different records
     const existing = store.getPasskey(body.credentialId)
     if (existing) {
@@ -89,7 +106,7 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // Verify challenge
+    // Verify challenge exists, unused, and correct type
     const challengeRecord = store.getChallenge(body.challenge)
     if (!challengeRecord) {
       return NextResponse.json(
@@ -105,21 +122,47 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Parse and verify client data
-    const clientData = parseClientDataJSON(body.clientDataJSON)
-    const origin = request.headers.get('origin') || `https://${body.rpId}`
+    // Parse and verify client data (includes origin allowlist check)
+    let clientData
+    try {
+      clientData = parseClientDataJSON(body.clientDataJSON)
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid client data JSON' },
+        { status: 400 }
+      )
+    }
     
     const clientDataVerification = verifyClientData(
       clientData,
       'webauthn.get', // Migration uses authentication (get) ceremony
       body.challenge,
-      body.rpId
+      configuredRpId
     )
     
     if (!clientDataVerification.valid) {
       console.error('Client data verification failed:', clientDataVerification.error)
       return NextResponse.json(
         { error: `Client data verification failed: ${clientDataVerification.error}` },
+        { status: 400 }
+      )
+    }
+
+    // Parse and verify authenticator data (rpIdHash, UP, UV)
+    let authData
+    try {
+      authData = parseAuthenticatorData(body.authenticatorData)
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid authenticator data' },
+        { status: 400 }
+      )
+    }
+
+    const authDataVerification = verifyAuthenticatorData(authData, configuredRpId, 0)
+    if (!authDataVerification.valid) {
+      return NextResponse.json(
+        { error: `Authenticator data verification failed: ${authDataVerification.error}` },
         { status: 400 }
       )
     }
@@ -144,7 +187,7 @@ export async function POST(request: NextRequest) {
     const stored = store.storePasskey({
       id: body.credentialId,
       publicKey: body.publicKey,
-      rpId: body.rpId,
+      rpId: configuredRpId,
       userHandle: body.userHandle,
       smartAccountAddress: body.smartAccountAddress,
     })
@@ -154,8 +197,8 @@ export async function POST(request: NextRequest) {
       console.warn('Failed to store passkey - may already exist')
     }
 
-    // Mark challenge as used (there's no delete, challenges expire)
-    // The challenge system automatically expires old challenges
+    // Mark challenge as used only after successful migration
+    store.markChallengeUsed(body.challenge)
 
     console.log('✅ Passkey migrated successfully:', {
       credentialId: body.credentialId.slice(0, 16) + '...',
@@ -174,5 +217,7 @@ export async function POST(request: NextRequest) {
       { error: error.message || 'Migration failed' },
       { status: 500 }
     )
+  } finally {
+    store.close()
   }
 }

@@ -27,10 +27,13 @@
  * }
  * 
  * Security:
- * - Both challenges must be server-issued and unused
- * - Both assertions must have matching rpId, origin, type
+ * - rpId must match server-configured NEXT_PUBLIC_RP_ID
+ * - Both challenges must be server-issued, unused, and distinct
+ * - Client data origin must be in WALLET_ALLOWED_ORIGINS
+ * - Authenticator data must match rpIdHash with UP and UV flags
  * - Public key must be common to both recovery attempts
  * - Both signatures must verify with the recovered key
+ * - Challenges are marked used after successful recovery
  * - Smart account address is derived server-side
  * - Rate limited to prevent abuse
  */
@@ -40,7 +43,9 @@ import { PasskeyStore } from '@/lib/passkey-store'
 import { Hex } from 'viem'
 import {
   parseClientDataJSON,
+  parseAuthenticatorData,
   verifyClientData,
+  verifyAuthenticatorData,
   verifySignature,
 } from '@/lib/webauthn-verifier'
 import { recoverPublicKeys, findCommonKey } from '@/lib/p256-recovery'
@@ -63,6 +68,10 @@ interface RecoverRequest {
     clientDataJSON: string
     signature: string
   }
+}
+
+function getConfiguredRpId(): string {
+  return process.env.NEXT_PUBLIC_RP_ID || 'localhost'
 }
 
 export async function POST(request: NextRequest) {
@@ -92,6 +101,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Validate rpId against server configuration (do not trust client)
+    const configuredRpId = getConfiguredRpId()
+    if (body.rpId !== configuredRpId) {
+      return NextResponse.json(
+        { error: 'Invalid RP ID' },
+        { status: 400 }
+      )
+    }
+
     // Assertions must use different challenges
     if (body.assertion1.challenge === body.assertion2.challenge) {
       return NextResponse.json(
@@ -109,7 +127,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify both challenges were server-issued
+    // Verify both challenges were server-issued and unused
     const challenge1 = store.getChallenge(body.assertion1.challenge)
     const challenge2 = store.getChallenge(body.assertion2.challenge)
 
@@ -127,14 +145,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Parse and verify client data for both assertions
-    const clientData1 = parseClientDataJSON(body.assertion1.clientDataJSON)
-    const clientData2 = parseClientDataJSON(body.assertion2.clientDataJSON)
-    
-    const origin = request.headers.get('origin') || `https://${body.rpId}`
+    // Parse and verify client data for both assertions (includes origin allowlist check)
+    let clientData1
+    let clientData2
+    try {
+      clientData1 = parseClientDataJSON(body.assertion1.clientDataJSON)
+      clientData2 = parseClientDataJSON(body.assertion2.clientDataJSON)
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid client data JSON' },
+        { status: 400 }
+      )
+    }
 
-    const verify1 = verifyClientData(clientData1, 'webauthn.get', body.assertion1.challenge, body.rpId)
-    const verify2 = verifyClientData(clientData2, 'webauthn.get', body.assertion2.challenge, body.rpId)
+    const verify1 = verifyClientData(clientData1, 'webauthn.get', body.assertion1.challenge, configuredRpId)
+    const verify2 = verifyClientData(clientData2, 'webauthn.get', body.assertion2.challenge, configuredRpId)
 
     if (!verify1.valid) {
       return NextResponse.json(
@@ -146,6 +171,36 @@ export async function POST(request: NextRequest) {
     if (!verify2.valid) {
       return NextResponse.json(
         { error: `Assertion 2 client data verification failed: ${verify2.error}` },
+        { status: 400 }
+      )
+    }
+
+    // Parse and verify authenticator data (rpIdHash, UP, UV) for both assertions
+    let authData1
+    let authData2
+    try {
+      authData1 = parseAuthenticatorData(body.assertion1.authenticatorData)
+      authData2 = parseAuthenticatorData(body.assertion2.authenticatorData)
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid authenticator data' },
+        { status: 400 }
+      )
+    }
+
+    const authVerify1 = verifyAuthenticatorData(authData1, configuredRpId, 0)
+    const authVerify2 = verifyAuthenticatorData(authData2, configuredRpId, 0)
+
+    if (!authVerify1.valid) {
+      return NextResponse.json(
+        { error: `Assertion 1 authenticator data verification failed: ${authVerify1.error}` },
+        { status: 400 }
+      )
+    }
+
+    if (!authVerify2.valid) {
+      return NextResponse.json(
+        { error: `Assertion 2 authenticator data verification failed: ${authVerify2.error}` },
         { status: 400 }
       )
     }
@@ -222,14 +277,14 @@ export async function POST(request: NextRequest) {
     const smartAccountAddress = await smartAccountService.getSmartAccountAddress({
       id: body.credentialId,
       publicKey: recoveredPublicKey,
-      rpId: body.rpId,
+      rpId: configuredRpId,
     }) as Hex
 
     // Store the recovered passkey
     const stored = store.storePasskey({
       id: body.credentialId,
       publicKey: recoveredPublicKey,
-      rpId: body.rpId,
+      rpId: configuredRpId,
       userHandle: body.userHandle,
       smartAccountAddress,
     })
@@ -237,6 +292,10 @@ export async function POST(request: NextRequest) {
     if (!stored) {
       console.warn('Failed to store recovered passkey - may already exist')
     }
+
+    // Mark both challenges as used only after successful recovery
+    store.markChallengeUsed(body.assertion1.challenge)
+    store.markChallengeUsed(body.assertion2.challenge)
 
     console.log('✅ Passkey recovered and registered successfully:', {
       credentialId: body.credentialId.slice(0, 16) + '...',
@@ -258,5 +317,7 @@ export async function POST(request: NextRequest) {
       { error: error.message || 'Recovery failed' },
       { status: 500 }
     )
+  } finally {
+    store.close()
   }
 }

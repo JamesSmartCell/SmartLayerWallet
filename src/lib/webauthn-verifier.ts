@@ -136,6 +136,11 @@ export function verifyAuthenticatorData(
   if (!(authData.flags & 0x01)) {
     return { valid: false, error: 'User present flag not set' }
   }
+
+  // Check UV (User Verified) flag
+  if (!(authData.flags & 0x04)) {
+    return { valid: false, error: 'User verified flag not set' }
+  }
   
   // Check sign count (skip if either is 0, as many authenticators don't increment)
   if (storedSignCount > 0 && authData.signCount > 0) {
