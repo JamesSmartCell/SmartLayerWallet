@@ -16,13 +16,13 @@ SmartLayerWallet is a Progressive Web App (PWA) that uses WebAuthn passkeys for 
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                      SmartLayerWallet                         │
+│                      SmartLayerWallet                        │
 │  (wallet.percolate.one - Next.js 15 on Node.js)              │
 ├──────────────────────────────────────────────────────────────┤
 │  Passkey Auth (WebAuthn)  │  Smart Account (ERC-4337)        │
-│  - Server-side storage    │  - Coinbase Smart Wallet          │
-│  - SQLite database        │  - Base Sepolia                   │
-│  - Challenge/response     │  - Bundler + Paymaster            │
+│  - Server-side storage    │  - Coinbase Smart Wallet         │
+│  - SQLite database        │  - Base Sepolia                  │
+│  - Challenge/response     │  - Bundler + Paymaster           │
 └──────────────────────────────────────────────────────────────┘
           │                              │
           │                              ▼
