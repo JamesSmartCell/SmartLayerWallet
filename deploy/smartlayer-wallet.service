@@ -10,18 +10,16 @@ EnvironmentFile=/home/pi/dev/SmartLayerWallet/.env
 Environment=NODE_ENV=production
 Environment=PORT=8089
 
-# IMPORTANT: If using nvm, systemd cannot find node via /usr/bin/env node
-# You MUST use the absolute path to the node binary:
-# 1. Find your node path: which node  (e.g. /home/pi/.nvm/versions/node/v24.11.0/bin/node)
-# 2. Replace ExecStart below with that absolute path
-# Example for nvm node v24.11.0:
-#   ExecStart=/home/pi/.nvm/versions/node/v24.11.0/bin/node /home/pi/dev/SmartLayerWallet/start-server.js
+# IMPORTANT: systemd cannot find node via /usr/bin/env or node_modules/.bin
+# We run Next.js directly with absolute paths (no PATH dependence)
+# This is the exact command that works on the Pi with nvm node v24.11.0
+# Adjust the node path if your node is at a different location (find with: which node)
 
 # WARNING: EnvironmentFile does NOT strip inline # comments
 # Your .env must have NO inline comments like: SOME_VAR=value # comment
 # Put comments on separate lines only
 
-ExecStart=/usr/bin/env node /home/pi/dev/SmartLayerWallet/start-server.js
+ExecStart=/home/pi/.nvm/versions/node/v24.11.0/bin/node /home/pi/dev/SmartLayerWallet/node_modules/next/dist/bin/next start -H 127.0.0.1 -p 8089
 
 Restart=always
 RestartSec=10
