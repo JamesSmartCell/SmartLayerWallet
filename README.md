@@ -155,7 +155,7 @@ npm run build
 npm run start
 ```
 
-Runs Next.js on port 8088.
+Runs Next.js on port 8089.
 
 ### HTTPS with server-https.js
 
@@ -166,7 +166,7 @@ For production deployment with TLS:
 export SSL_CERT=/path/to/fullchain.pem
 export SSL_KEY=/path/to/privkey.pem
 
-# Run HTTPS proxy (port 8089 -> Next.js on 8088)
+# Run HTTPS proxy (port 8443 -> Next.js on 8089)
 npm run start:https
 ```
 
@@ -369,7 +369,7 @@ Type=simple
 User=www-data
 WorkingDirectory=/var/www/smartlayer-wallet
 Environment="NODE_ENV=production"
-Environment="PORT=8088"
+Environment="PORT=8089"
 EnvironmentFile=/var/www/smartlayer-wallet/.env
 ExecStart=/usr/bin/npm start
 Restart=on-failure
@@ -389,8 +389,8 @@ Type=simple
 User=www-data
 WorkingDirectory=/var/www/smartlayer-wallet
 Environment="NODE_ENV=production"
-Environment="PORT=8089"
-Environment="BACKEND_PORT=8088"
+Environment="PORT=8443"
+Environment="BACKEND_PORT=8089"
 Environment="SSL_CERT=/etc/letsencrypt/live/wallet.percolate.one/fullchain.pem"
 Environment="SSL_KEY=/etc/letsencrypt/live/wallet.percolate.one/privkey.pem"
 EnvironmentFile=/var/www/smartlayer-wallet/.env
@@ -448,8 +448,8 @@ SmartLayerWallet auto-deploys to a Raspberry Pi at `https://wallet.percolate.one
 
 **Architecture:**
 - **Caddy on Linode**: Terminates TLS (auto-managed via Let's Encrypt)
-- **SSH reverse tunnel**: Linode port 9011 → Pi 127.0.0.1:8088
-- **Next.js on Pi**: Listens on 127.0.0.1:8088 (no TLS)
+- **SSH reverse tunnel**: Linode port 9011 → Pi 127.0.0.1:8089
+- **Next.js on Pi**: Listens on 127.0.0.1:8089 (no TLS)
 - **Camera**: Accessed on LAN at 192.168.50.224:8787 via Next.js `/cam-gate` route
 - **Service**: `smartlayer-wallet` (single systemd unit)
 - **Database**: `./data/wallet.db` (SQLite passkeys, gitignored)
@@ -466,13 +466,13 @@ wallet.percolate.one {
 
 **SSH tunnel (on Pi):**
 ```bash
-ssh -R 9011:127.0.0.1:8088 linode-wallet-tunnel
+ssh -R 9011:127.0.0.1:8089 linode-wallet-tunnel
 ```
 
 **Auto-deploy workflow:**
 - Push to `main` triggers deployment on self-hosted Pi runner
 - Runs: `git pull`, `npm ci`, `npm test`, `npm run build`, restart service
-- Health check: waits for service to be active and responding on 127.0.0.1:8088
+- Health check: waits for service to be active and responding on 127.0.0.1:8089
 
 **One-time Pi setup:**
 
