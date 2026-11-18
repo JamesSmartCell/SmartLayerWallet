@@ -59,8 +59,10 @@ export class PasskeyService {
           // Omit authenticatorAttachment so iCloud / Google / Microsoft Authenticator
           // password managers can offer passkeys (not just built-in platform biometrics).
           userVerification: 'required',
-          residentKey: 'preferred',
-          requireResidentKey: false,
+          // Use 'required' for true discoverable credentials (client-side discoverable)
+          // This enables login without credentialId hint (essential for Safari ITP resistance)
+          residentKey: 'required',
+          requireResidentKey: true,
         },
         attestation: 'direct',
         timeout: 60000,
@@ -188,21 +190,18 @@ export class PasskeyService {
       throw new Error('Authentication failed')
     }
 
-    // Get stored credential or return partial
-    let credential = this.getStoredPasskey(assertion.id)
-    
-    if (!credential) {
-      // Create partial credential - caller should fetch from server API
-      credential = {
-        id: assertion.id,
-        publicKey: '0x' as Hex, // Empty - needs to be filled from storage/API
-        rpId: this.rpId,
-      }
+    // CHANGED: Always return partial credential without public key
+    // Caller MUST fetch public key from server (server is source of truth)
+    // localStorage is only used for optional migration path
+    const credential: PasskeyCredential = {
+      id: assertion.id,
+      publicKey: '0x' as Hex, // Empty - MUST be filled from server API
+      rpId: this.rpId,
     }
 
-    console.log('✅ Passkey authentication successful:', {
+    console.log('✅ Passkey authentication successful (credential ID only):', {
       id: assertion.id.slice(0, 16) + '...',
-      hasStoredKey: credential.publicKey !== '0x'
+      note: 'Public key must be fetched from server'
     })
 
     return {
@@ -422,6 +421,15 @@ export class PasskeyService {
     } catch (error) {
       console.warn('Failed to clear stored passkey:', error)
     }
+  }
+
+  /**
+   * Check if localStorage has passkey data (for migration)
+   * Returns stored credential if found, null otherwise
+   * ONLY used for migration of old localStorage-only passkeys
+   */
+  getLocalStoragePasskeyForMigration(credentialId: string): PasskeyCredential | null {
+    return this.getStoredPasskey(credentialId)
   }
 
   /**

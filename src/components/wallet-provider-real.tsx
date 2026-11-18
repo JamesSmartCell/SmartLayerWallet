@@ -159,7 +159,8 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
         updatedAt: new Date(),
       }
 
-      // Store passkey on server for cross-device sync
+      // Store passkey on server - REQUIRED for Safari ITP resistance
+      // Server storage is the source of truth; localStorage is only for migration
       try {
         await backendService.registerPasskey({
           credentialId: credential.id,
@@ -169,9 +170,12 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
           smartAccountAddress: walletAddress,
           challenge,
         })
+        console.log('✅ Passkey registered on server')
       } catch (error) {
-        console.warn('Failed to register passkey on server:', error)
-        // Continue anyway - passkey is stored locally
+        console.error('❌ Failed to register passkey on server:', error)
+        // FAIL registration if server storage fails - without server storage,
+        // Safari ITP will wipe localStorage after 7 days and user loses access
+        throw new Error('Failed to register passkey on server. Please try again.')
       }
       
       // Store user session locally
@@ -234,25 +238,50 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       
       let vc = result.credential
       
-      // If credential missing public key, fetch from server
-      if (vc.publicKey === '0x') {
-        console.log('🔍 Fetching public key from server...')
-        const backendService = new PasskeyBackendService()
-        const recovered = await backendService.getPasskey(vc.id)
+      // ALWAYS fetch from server (server is source of truth)
+      console.log('🔍 Fetching passkey data from server...')
+      const recovered = await backendService.getPasskey(vc.id)
+      
+      if (!recovered) {
+        // Migration path: check if passkey exists in localStorage
+        console.log('⚠️ Passkey not found on server, checking localStorage for migration...')
+        const localPasskey = passkeyService.getLocalStoragePasskeyForMigration(vc.id)
         
-        if (!recovered) {
-          throw new Error('Credential not found on server')
+        if (localPasskey && localPasskey.publicKey !== '0x') {
+          console.log('🔄 Found passkey in localStorage, migrating to server...')
+          
+          // Compute smart account address to verify this is the correct passkey
+          const walletAddress = await smartAccountService.getSmartAccountAddress(localPasskey) as `0x${string}`
+          
+          // Upload to server
+          try {
+            await backendService.registerPasskey({
+              credentialId: localPasskey.id,
+              publicKey: localPasskey.publicKey,
+              rpId: state.rpId,
+              userHandle: localPasskey.username || 'migrated-user',
+              smartAccountAddress: walletAddress,
+              challenge, // Use current challenge for verification
+            })
+            console.log('✅ Migration successful - passkey now stored on server')
+            
+            // Use the migrated passkey
+            vc = localPasskey
+          } catch (migrationError) {
+            console.error('❌ Migration failed:', migrationError)
+            throw new Error('Failed to migrate passkey to server. Please try again or re-register.')
+          }
+        } else {
+          throw new Error('Passkey not found. You may need to re-register your passkey.')
         }
-        
+      } else {
+        // Use passkey from server
         vc = {
           id: vc.id,
           rpId: vc.rpId,
-          username: vc.username,
+          username: recovered.userHandle,
           publicKey: recovered.publicKey,
         }
-        
-        // Update local storage
-        passkeyService.updateStoredPasskey(vc.id, vc.publicKey)
       }
       
       // Use SDK canonical address
