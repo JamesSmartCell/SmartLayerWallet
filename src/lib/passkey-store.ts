@@ -10,6 +10,8 @@
 import Database from 'better-sqlite3'
 import { Hex } from 'viem'
 import crypto from 'crypto'
+import fs from 'fs'
+import path from 'path'
 
 export interface PasskeyRecord {
   id: string                    // credential ID
@@ -34,7 +36,17 @@ export class PasskeyStore {
   private db: Database.Database
 
   constructor(dbPath: string = process.env.WALLET_DB_PATH || './data/wallet.db') {
-    this.db = new Database(dbPath)
+    // Resolve path and ensure directory exists
+    const resolvedPath = path.resolve(dbPath)
+    const dbDir = path.dirname(resolvedPath)
+    
+    // Create directory if it doesn't exist (recursive: true creates parent directories)
+    if (!fs.existsSync(dbDir)) {
+      fs.mkdirSync(dbDir, { recursive: true })
+      console.log(`📁 Created database directory: ${dbDir}`)
+    }
+    
+    this.db = new Database(resolvedPath)
     this.db.pragma('journal_mode = WAL')
     this.initializeSchema()
   }

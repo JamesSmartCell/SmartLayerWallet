@@ -107,5 +107,61 @@ export class PasskeyBackendService {
     if (!r.ok) throw new Error(data?.error || `Get passkey failed: ${r.status}`)
     return data
   }
+
+  /**
+   * Migrate a localStorage-only passkey to server storage with signature verification
+   */
+  async migratePasskey(params: {
+    credentialId: string
+    publicKey: Hex
+    rpId: string
+    userHandle: string
+    smartAccountAddress: Hex
+    challenge: Hex
+    authenticatorData: string
+    clientDataJSON: string
+    signature: string
+  }): Promise<{ success: boolean; credentialId: string; message: string }> {
+    const url = `${this.baseUrl}/api/passkey/migrate`
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    })
+    const data = await this.parseJsonResponse<any>(r, url)
+    if (!r.ok) throw new Error(data?.error || `Migration failed: ${r.status}`)
+    return data
+  }
+
+  /**
+   * Recover passkey using public key recovery from two assertions
+   */
+  async recoverPasskey(params: {
+    credentialId: string
+    rpId: string
+    userHandle: string
+    assertion1: {
+      challenge: Hex
+      authenticatorData: string
+      clientDataJSON: string
+      signature: string
+    }
+    assertion2: {
+      challenge: Hex
+      authenticatorData: string
+      clientDataJSON: string
+      signature: string
+    }
+  }): Promise<{ success: boolean; credentialId: string; publicKey: Hex; smartAccountAddress: Hex; message: string }> {
+    const url = `${this.baseUrl}/api/passkey/recover`
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+    })
+    const data = await this.parseJsonResponse<any>(r, url)
+    if (!r.ok) throw new Error(data?.error || `Recovery failed: ${r.status}`)
+    return data
+  }
 }
 

@@ -131,19 +131,19 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('🔐 Starting sign-up for username:', username)
       
-      // Get challenge from our API
+      // Get challenge from our API - REQUIRED (no fallback to local challenge)
       const backendService = new PasskeyBackendService()
       let challenge
       try {
         const challengeResponse = await backendService.getChallenge('registration')
         challenge = challengeResponse.challenge
       } catch (error) {
-        console.warn('Failed to get challenge from backend, using local:', error)
-        challenge = PasskeyService.generateChallenge()
+        console.error('Failed to get challenge from backend:', error)
+        throw new Error('Failed to get challenge from server. Please check your connection and try again.')
       }
 
-      // Create passkey
-      const credential = await passkeyService.create({ username, challenge })
+      // Create passkey - now returns attestation data for server verification
+      const { credential, attestationObject, clientDataJSON } = await passkeyService.create({ username, challenge })
 
       // Use SDK canonical address
       const walletAddress = await smartAccountService.getSmartAccountAddress(credential) as `0x${string}`
@@ -161,22 +161,17 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
 
       // Store passkey on server - REQUIRED for Safari ITP resistance
       // Server storage is the source of truth; localStorage is only for migration
-      try {
-        await backendService.registerPasskey({
-          credentialId: credential.id,
-          publicKey: credential.publicKey,
-          rpId: state.rpId,
-          userHandle: username,
-          smartAccountAddress: walletAddress,
-          challenge,
-        })
-        console.log('✅ Passkey registered on server')
-      } catch (error) {
-        console.error('❌ Failed to register passkey on server:', error)
-        // FAIL registration if server storage fails - without server storage,
-        // Safari ITP will wipe localStorage after 7 days and user loses access
-        throw new Error('Failed to register passkey on server. Please try again.')
-      }
+      await backendService.registerPasskey({
+        credentialId: credential.id,
+        publicKey: credential.publicKey,
+        rpId: state.rpId,
+        userHandle: username,
+        smartAccountAddress: walletAddress,
+        challenge,
+        attestationObject,
+        clientDataJSON,
+      })
+      console.log('✅ Passkey registered on server')
       
       // Store user session locally
       localStorage.setItem('wallet_user', JSON.stringify(user))
@@ -243,36 +238,105 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const recovered = await backendService.getPasskey(vc.id)
       
       if (!recovered) {
-        // Migration path: check if passkey exists in localStorage
-        console.log('⚠️ Passkey not found on server, checking localStorage for migration...')
+        // Two-path recovery: try localStorage migration first (fast), then cryptographic recovery
+        console.log('⚠️ Passkey not found on server')
         const localPasskey = passkeyService.getLocalStoragePasskeyForMigration(vc.id)
         
         if (localPasskey && localPasskey.publicKey !== '0x') {
-          console.log('🔄 Found passkey in localStorage, migrating to server...')
+          // Fast path: localStorage migration with signature verification
+          console.log('🔄 Found passkey in localStorage, migrating to server with signature verification...')
           
           // Compute smart account address to verify this is the correct passkey
           const walletAddress = await smartAccountService.getSmartAccountAddress(localPasskey) as `0x${string}`
           
-          // Upload to server
+          // Migration requires signature verification - extract assertion data
+          if (!result.signature || !result.webauthn) {
+            throw new Error('Cannot migrate: missing signature data from authentication')
+          }
+          
+          // Upload to server with signature verification
           try {
-            await backendService.registerPasskey({
+            await backendService.migratePasskey({
               credentialId: localPasskey.id,
               publicKey: localPasskey.publicKey,
               rpId: state.rpId,
               userHandle: localPasskey.username || 'migrated-user',
               smartAccountAddress: walletAddress,
-              challenge, // Use current challenge for verification
+              challenge,
+              authenticatorData: result.webauthn.authenticatorData,
+              clientDataJSON: result.webauthn.clientDataJSON,
+              signature: result.signature,
             })
             console.log('✅ Migration successful - passkey now stored on server')
             
             // Use the migrated passkey
             vc = localPasskey
-          } catch (migrationError) {
+          } catch (migrationError: any) {
             console.error('❌ Migration failed:', migrationError)
-            throw new Error('Failed to migrate passkey to server. Please try again or re-register.')
+            // Fall through to cryptographic recovery
+            console.log('🔐 Attempting cryptographic public key recovery...')
           }
-        } else {
-          throw new Error('Passkey not found. You may need to re-register your passkey.')
+        }
+        
+        // Cryptographic recovery path: no localStorage or migration failed
+        // NOTE: Public key recovery is EXPERIMENTAL and may not work reliably yet
+        // See RECOVERY_STATUS.md for details
+        if (vc.publicKey === '0x') {
+          console.log('🔐 No server record and no localStorage. Attempting public key recovery...')
+          console.log('   This uses two separate passkey verifications to cryptographically recover your public key.')
+          console.log('   NOTE: This feature is experimental. If it fails, you will need to re-register.')
+          
+          // Get second challenge
+          let challenge2: Hex
+          try {
+            const challengeResponse2 = await backendService.getChallenge('authentication')
+            challenge2 = challengeResponse2.challenge
+          } catch (error) {
+            console.error('Failed to get second challenge:', error)
+            throw new Error('Failed to get challenge from server. Please check your connection and try again.')
+          }
+          
+          // Request second assertion with same credentialId
+          console.log('   Please confirm with your passkey once more to restore your wallet...')
+          const result2 = await passkeyService.authenticate({ challenge: challenge2, credentialId: vc.id })
+          
+          if (!result.signature || !result.webauthn || !result2.signature || !result2.webauthn) {
+            throw new Error('Missing signature data for recovery')
+          }
+          
+          // Call recovery endpoint (EXPERIMENTAL)
+          try {
+            const recoveryResult = await backendService.recoverPasskey({
+              credentialId: vc.id,
+              rpId: state.rpId,
+              userHandle: 'recovered-user',
+              assertion1: {
+                challenge,
+                authenticatorData: result.webauthn.authenticatorData,
+                clientDataJSON: result.webauthn.clientDataJSON,
+                signature: result.signature,
+              },
+              assertion2: {
+                challenge: challenge2,
+                authenticatorData: result2.webauthn.authenticatorData,
+                clientDataJSON: result2.webauthn.clientDataJSON,
+                signature: result2.signature,
+              },
+            })
+            
+            console.log('✅ Public key recovered successfully!')
+            
+            // Use the recovered passkey
+            vc = {
+              id: vc.id,
+              rpId: vc.rpId,
+              username: 'recovered-user',
+              publicKey: recoveryResult.publicKey,
+            }
+          } catch (recoveryError: any) {
+            console.error('❌ Public key recovery failed (experimental feature):', recoveryError)
+            throw new Error(`Passkey not found. Please re-register your passkey. (Recovery failed: ${recoveryError.message})`)
+          }
         }
       } else {
         // Use passkey from server
