@@ -270,4 +270,40 @@ describe('PasskeyStore', () => {
       expect(store.checkRateLimit(ip, endpoint, maxRequests, windowSeconds)).toBe(false)
     })
   })
+
+  describe('directory creation', () => {
+    it('should create database directory if it does not exist', () => {
+      const nestedDbPath = path.join(__dirname, 'nested', 'test-db-dir', 'wallet.db')
+      const nestedDir = path.dirname(nestedDbPath)
+      
+      // Ensure directory doesn't exist
+      if (fs.existsSync(nestedDir)) {
+        fs.rmSync(nestedDir, { recursive: true })
+      }
+      
+      // Create store with nested path
+      const nestedStore = new PasskeyStore(nestedDbPath)
+      
+      // Verify directory was created
+      expect(fs.existsSync(nestedDir)).toBe(true)
+      
+      // Verify database works
+      const passkey = {
+        id: 'test-nested-id',
+        publicKey: '0x04' + 'b'.repeat(128) as Hex,
+        rpId: 'percolate.one',
+        userHandle: 'nested@example.com',
+        smartAccountAddress: '0x' + '2'.repeat(40) as Hex,
+      }
+      
+      nestedStore.storePasskey(passkey)
+      const retrieved = nestedStore.getPasskey(passkey.id)
+      expect(retrieved).toBeTruthy()
+      expect(retrieved?.id).toBe(passkey.id)
+      
+      // Cleanup
+      nestedStore.close()
+      fs.rmSync(path.join(__dirname, 'nested'), { recursive: true })
+    })
+  })
 })

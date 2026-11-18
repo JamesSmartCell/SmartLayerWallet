@@ -174,6 +174,16 @@ describe('WebAuthn Verifier', () => {
       expect(result.error).toContain('User present')
     })
 
+    it('should reject missing UV flag', () => {
+      const rpId = 'localhost'
+      const authenticatorData = createAuthenticatorData(rpId, 1, 0x01) // UP only
+      const authData = parseAuthenticatorData(authenticatorData)
+      
+      const result = verifyAuthenticatorData(authData, rpId, 0)
+      expect(result.valid).toBe(false)
+      expect(result.error).toContain('User verified')
+    })
+
     it('should detect counter regression', () => {
       const rpId = 'localhost'
       const authenticatorData = createAuthenticatorData(rpId, 5)

@@ -35,7 +35,11 @@ export class PasskeyService {
   async create(options: {
     username: string
     challenge: Hex
-  }): Promise<PasskeyCredential> {
+  }): Promise<{
+    credential: PasskeyCredential
+    attestationObject: string
+    clientDataJSON: string
+  }> {
     if (!window.PublicKeyCredential) {
       throw new Error('WebAuthn is not supported')
     }
@@ -81,7 +85,15 @@ export class PasskeyService {
       throw new Error('Failed to create passkey credential')
     }
 
-    // Extract public key from attestation response (simplified for now)
+    // Extract attestation data (base64url strings from webauthn-json)
+    const attestationObject = credential.response.attestationObject as unknown as string
+    const clientDataJSON = credential.response.clientDataJSON as unknown as string
+
+    if (!attestationObject || !clientDataJSON) {
+      throw new Error('Missing attestation data from WebAuthn response')
+    }
+
+    // Extract public key from attestation response
     const publicKey = this.extractPublicKeyFromAttestation(credential.response)
 
     const passkeyCredential: PasskeyCredential = {
@@ -100,7 +112,11 @@ export class PasskeyService {
       username: options.username
     })
 
-    return passkeyCredential
+    return {
+      credential: passkeyCredential,
+      attestationObject,
+      clientDataJSON,
+    }
   }
 
   /**
@@ -210,6 +226,7 @@ export class PasskeyService {
       webauthn: {
         authenticatorData: assertion.response.authenticatorData,
         clientDataJSON: assertion.response.clientDataJSON,
+        userHandle: assertion.response.userHandle, // May be null/undefined
       },
     }
   }
